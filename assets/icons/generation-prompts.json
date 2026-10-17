@@ -1,0 +1,24 @@
+{
+  "tool": "Built-in image_gen",
+  "chosenStyle": "Original detailed feathered parrot, selected by user. Simplified variant is discarded.",
+  "states": [
+    {
+      "file": "paco-friendly-v1.png",
+      "prompt": "Use case: logo-brand.\nCreate one polished macOS app icon for Paco: a charming green PARROT wearing a plain dark forest-green peaked cap, inside a classic rounded-square cream app-icon tile. One icon only, no contact sheet.\nReferences: first and second attached photos are ONLY for the broad soft crown and curved short brim shape of the hat. Omit ALL their text, insignia, badges, emblems, shields, rifles, official symbols, decorative bands and national references. Third reference, the illustrated raven, is ONLY a cue for restrained soft shading over clean 2D shapes; do not copy the raven's identity or dark palette.\nCharacter: original, immediately recognizable parrot with a plump compact silhouette, lime and leaf-green head and shoulders, pale mint cheek patches, large expressive dark eyes, prominent warm golden-orange hooked parrot beak with a gently downcurved tip. Friendly quietly confident expression, inviting eyes, tiny smile conveyed by the beak. Head nearly frontal with a slight three-quarter turn, both eyes visible. Large face and cap fill the tile with a little breathing room. Chest and small wings visible at bottom. Plain cap with broad gently rounded green crown and dark green short visor; no badge of any kind, no buttons, no emblem.\nStyle: beautifully simplified 2D illustration with convincing soft volume. Broad tonal planes, selective soft gradient shading under the brim, beak and wings, restrained upper-left light. Crisp clean silhouette, minimal internal detail. Sophisticated playful mascot with strong readability at 32 and 64 pixels. No thick black outline, no feather texture, no plastic 3D render, no glossy toy material, no photorealism.\nComposition: single large centered rounded-square warm ivory tile, straight-on, occupying approximately 90% of a square canvas, large continuous rounded corners, subtle dimensional tile edge. Everything outside the tile genuinely transparent. Character stays within tile. No text, letters, typography, watermarks, scenery, extra objects or surrounding presentation. Preserve a clear design that can later become impatient and angry through eyes and posture while staying the same mascot."
+    },
+    {
+      "file": "paco-impatient-v1.png",
+      "prompt": "Edit the supplied detailed feathered Paco app icon to create its IMPATIENT expression state. This source is the user's chosen master: preserve ALL its layered feather detailing, scalloped cheeks, chest feather tufts, layered wings, cap texture, original soft shading and 2D illustrated volume. Preserve its colors, rounded ivory square, character position, size and cap. Change ONLY the facial expression: upper eyelids half lowered into a skeptical unimpressed side-eye, pupils still engaging the viewer; beak closed in a tiny displeased curve, same golden hooked shape. The mood is 'I am still waiting for you to do your tasks', humorous and mildly annoyed, not sleepy or sad. No human eyebrows, extra objects or effects. Blank cap, no badges, letters, insignia, national symbols or watermark. Keep rounded square tile with transparent outer corners; use a crisp continuous edge without flecks. Single square icon."
+    },
+    {
+      "file": "paco-angry-v1.png",
+      "prompt": "Edit the supplied original detailed feathered Paco app icon to create its ANGRY expression state. This source is the user's chosen master: preserve ALL its layered feather detailing, scalloped cheeks, chest feather tufts, layered wings, cap texture, soft shading and 2D illustrated volume. Preserve exact palette, ivory rounded-square tile, character framing and scale. Change expression and subtly posture: strong inward-downward angled GREEN brow ridges, narrow intense eyes engaging viewer, golden hooked beak closed with emphatic displeased curve, cheeks slightly puffed and shoulders lifted with indignation. Cap dips forward a tiny bit. Comically grumpy and still lovable. The expression must be much angrier than a half-lidded unimpressed face. No teeth, red face, steam, flames, icons, effects or extra objects. Keep original feathered character. Blank cap with no text, badges or insignia. Transparent outside the tile with a clean continuous rounded boundary. Single square macOS icon, no contact sheet."
+    }
+  ],
+  "references": [
+    "https://github.com/s1dashu/ip-as-logo-skill",
+    "https://github.com/xzhih/app-icon-skill",
+    "/Users/nathalia/git/astro-images/assets/raven.png"
+  ],
+  "notes": "Artwork concepts, not integrated runtime app icons. Generated outer alpha edges contain visible flecks and require cleanup before final macOS packaging. Original generated pixels preserved."
+}
