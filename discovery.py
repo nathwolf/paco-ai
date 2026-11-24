@@ -1,7 +1,7 @@
 """Read-only sources feeding Paco's local reminders."""
 import argparse
 import json
-import re
+import mail_reasoning
 import shutil
 import subprocess
 import sys
@@ -14,10 +14,16 @@ ROOT = Path.home() / "Library/Application Support/Paco"
 CONFIG = ROOT / "sources.json"
 SCOPES = ["https://www.googleapis.com/auth/" + name for name in
           ("gmail.readonly", "calendar.events.readonly", "tasks.readonly")]
-PROMISE = re.compile(r"\b(?:I(?:['’]ll| will)|me comprometo a|je vais)\s+([^.!?\n]{4,180})", re.I)
-
-
 def configure(args):
+    if args[:1] == ["model"]:
+        settings = mail_reasoning.configure(args[1:])
+        ROOT.mkdir(parents=True, exist_ok=True)
+        config = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
+        config["model"] = settings
+        tmp = CONFIG.with_suffix(".tmp")
+        tmp.write_text(json.dumps(config))
+        tmp.replace(CONFIG)
+        return
     parser = argparse.ArgumentParser(prog="paco connect")
     parser.add_argument("source", choices=["github", "google"])
     parser.add_argument("--client", type=Path)
@@ -98,14 +104,6 @@ def google_rows(source, now):
                     begins = datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp()
                     if begins > now:
                         yield event["id"], "Prepare for " + event.get("summary", "meeting"), begins - 900
-        else:
-            url = "https://gmail.googleapis.com/gmail/v1/users/me/messages"
-            for msg in pages(url, "messages", q='in:sent newer_than:7d {"I will" "I’ll" "I\'ll" "je vais" "me comprometo a"}'):
-                data = get(url + "/" + msg["id"], {"format": "metadata"})
-                match = PROMISE.search(data.get("snippet", ""))
-                if match:
-                    yield msg["id"], "Check commitment: " + match.group(0), now
-
 
 def reconcile(db, source, rows, now):
     # Fetch the entire snapshot successfully before expiring any previous entries.
@@ -143,6 +141,13 @@ def sync(db):
     for source in sources:
         try:
             now = time.time()
+            if source == "gmail":
+                if config.get("model"):
+                    with google_session() as session:
+                        mail_reasoning.sync(db, session, config["model"])
+                else:
+                    print("Gmail discovery requires paco.py connect model", file=sys.stderr)
+                continue
             rows = github(config[source], now) if source == "github" else google_rows(source, now)
             reconcile(db, source, rows, now)
         except Exception as exc:
