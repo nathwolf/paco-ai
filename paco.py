@@ -116,6 +116,10 @@ def main(argv=None):
     publish.add_argument("draft")
     evidence = commands.add_parser("evidence")
     evidence.add_argument("id", type=int)
+    for name in ("depends","unlink"):
+        dependency = commands.add_parser(name)
+        dependency.add_argument("task",type=int)
+        dependency.add_argument("prerequisite",type=int)
     track = commands.add_parser("track")
     track.add_argument("path")
     prefer = commands.add_parser("set")
@@ -153,6 +157,16 @@ def main(argv=None):
                     print(json.dumps(dict(row),ensure_ascii=False))
                 for row in db.execute("SELECT message,quote FROM mail_resolution WHERE task=?", (args.id,)):
                     print(json.dumps(dict(row),ensure_ascii=False))
+            return
+        if args.cmd == "depends":
+            try:
+                planning.add_dependency(db,args.task,args.prerequisite)
+            except ValueError as exc:
+                parser.error(str(exc))
+            return
+        if args.cmd == "unlink":
+            with db:
+                db.execute("DELETE FROM dependency WHERE task=? AND prerequisite=?",(args.task,args.prerequisite))
             return
         if args.cmd == "track":
             return discovery.projects.track(db, args.path)

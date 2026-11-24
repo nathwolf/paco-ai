@@ -48,3 +48,5 @@ Enable the Drive API and reconnect Google to authorize metadata access. Run `pyt
 For an assigned GitHub issue, `python paco.py draft-comment TASK_ID "text"` saves a local draft. Use `python paco.py publish DRAFT_ID` to review the target and text and explicitly approve posting. An uncertain delivery is checked for its receipt before another attempt. Read-only GitHub credentials can still be used for discovery.
 
 Inspect the source and stored supporting quotes with `python paco.py evidence TASK_ID`.
+
+Use `python paco.py depends TASK PREREQUISITE` to withhold a task until its prerequisite is complete. Both IDs must already exist. Paco rejects cycles. Remove a dependency with `python paco.py unlink TASK PREREQUISITE`.

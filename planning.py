@@ -11,6 +11,7 @@ def initialize(db):
         CREATE TABLE IF NOT EXISTS outgoing(id TEXT PRIMARY KEY,target TEXT,body TEXT,status TEXT,receipt TEXT);
         CREATE TABLE IF NOT EXISTS repository(path TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS drive_context(id TEXT PRIMARY KEY,title TEXT,url TEXT,modified TEXT);
+        CREATE TABLE IF NOT EXISTS dependency(task INTEGER, prerequisite INTEGER, PRIMARY KEY(task,prerequisite));
         CREATE TABLE IF NOT EXISTS busy(start REAL,end REAL);
         CREATE TABLE IF NOT EXISTS details(task INTEGER PRIMARY KEY, goal TEXT, minutes INTEGER, deadline REAL);
     """)
@@ -41,6 +42,8 @@ def ranked(db, now):
         CASE WHEN d.goal=? AND d.goal!='' THEN 1 ELSE 0 END AS aligned
         FROM task t LEFT JOIN details d ON d.task=t.id
         WHERE t.state IN ('open','focus') AND t.due<=?
+        AND NOT EXISTS (SELECT 1 FROM dependency e JOIN task p ON p.id=e.prerequisite
+            WHERE e.task=t.id AND p.state!='done')
         AND (t.state='focus' OR ? IS NULL OR d.minutes IS NULL OR d.minutes*60<=?-?)
         ORDER BY checkin DESC, urgent DESC, aligned DESC, t.priority DESC, t.due, t.id""",
                       (now+86400, goal, now, until, until, now))
@@ -64,3 +67,15 @@ def prompt(db, task, now):
     choices = (("Hora de empezar", "Sigo esperando", "Vamos. Da el primer paso") if spanish else
                ("Time to start", "Still waiting on you", "Come on. Take the first step"))
     return choices[min(task["nudges"], len(choices)-1)]
+
+def add_dependency(db, task, prerequisite):
+    with db:
+        db.execute("BEGIN IMMEDIATE")
+        if db.execute("SELECT count(*) FROM task WHERE id IN (?,?)",(task,prerequisite)).fetchone()[0] != 2:
+            raise ValueError("choose two different existing tasks")
+        cycle = db.execute("""WITH RECURSIVE parents(id) AS (
+            SELECT ? UNION SELECT e.prerequisite FROM dependency e JOIN parents ON e.task=parents.id
+            ) SELECT 1 FROM parents WHERE id=?""",(prerequisite,task)).fetchone()
+        if cycle:
+            raise ValueError("dependency would form a cycle")
+        db.execute("INSERT OR IGNORE INTO dependency VALUES(?,?)",(task,prerequisite))

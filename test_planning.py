@@ -40,3 +40,13 @@ class Workday(unittest.TestCase):
                 self.assertEqual(actions.publish(db,draft,"gh","me",lambda _: "POST"),"receipt")
                 self.assertEqual(actions.publish(db,draft,"gh","me"),"receipt")
                 self.assertEqual(call.call_count,3)
+
+    def test_dependency_cycle_and_release(self):
+        with tempfile.TemporaryDirectory() as tmp, closing(connect(Path(tmp)/"db")) as db:
+            reconcile(db,"github",[("a","Deliver",0),("b","Prepare",0)],0)
+            planning.add_dependency(db,1,2)
+            self.assertEqual([r["id"] for r in planning.ranked(db,0)],[2])
+            with self.assertRaises(ValueError):
+                planning.add_dependency(db,2,1)
+            db.execute("UPDATE task SET state='done' WHERE id=2")
+            self.assertEqual([r["id"] for r in planning.ranked(db,0)],[1])
