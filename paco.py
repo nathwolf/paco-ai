@@ -8,6 +8,7 @@ import plistlib
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from contextlib import closing
 
@@ -58,6 +59,7 @@ def install():
     if Path(__file__).resolve() != target:
         shutil.copyfile(__file__, target)
         shutil.copyfile(discovery.__file__, ROOT / "discovery.py")
+        shutil.copyfile(discovery.mail_reasoning.__file__, ROOT / "mail_reasoning.py")
     plist = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
     plist.parent.mkdir(parents=True, exist_ok=True)
     config = dict(Label=LABEL, ProgramArguments=[sys.executable, str(target), "run"],
@@ -66,6 +68,16 @@ def install():
     subprocess.run(["launchctl", "bootout", domain + "/" + LABEL], capture_output=True)
     plist.write_bytes(plistlib.dumps(config))
     subprocess.run(["launchctl", "bootstrap", domain, str(plist)], check=True)
+
+
+def sync_loop(path):
+    while True:
+        try:
+            with closing(connect(path)) as db:
+                discovery.sync(db)
+        except Exception as exc:
+            print(f"Background sync failed ({type(exc).__name__})", file=sys.stderr)
+        time.sleep(300)
 
 
 def main(argv=None):
@@ -97,12 +109,9 @@ def main(argv=None):
         if args.cmd == "sync":
             return discovery.sync(db)
         if args.cmd == "run":
-            next_sync = 0
+            threading.Thread(target=sync_loop, args=(args.db,), daemon=True).start()
             while True:
                 try:
-                    if time.monotonic() >= next_sync:
-                        discovery.sync(db)
-                        next_sync = time.monotonic() + 300
                     tick(db, time.time(), notify)
                 except (OSError, subprocess.SubprocessError, sqlite3.OperationalError) as exc:
                     print(exc, file=sys.stderr, flush=True)
