@@ -1,4 +1,5 @@
 """Evidence-backed Gmail task extraction using a configurable chat model."""
+import history_sync
 import argparse
 import base64
 import json
@@ -167,32 +168,26 @@ def sync(db, session, settings):
         response = session.get(root + path, params=params, timeout=15)
         response.raise_for_status()
         return response.json()
-    owner = get("profile")["emailAddress"]
-    page = None
-    budget = 4
-    while budget:
-        batch = get("threads", q="newer_than:7d -in:spam -in:trash -in:drafts", pageToken=page)
-        for item in batch.get("threads", []):
-            version = item.get("historyId")
-            if version and db.execute("SELECT 1 FROM mail_revision WHERE thread=? AND version=?",
-                                      (owner + "/" + item["id"], version)).fetchone():
-                continue
-            tid = owner + "/" + item["id"]
-            if db.execute("SELECT 1 FROM mail_retry WHERE thread=? AND retry_at>?",
-                          (tid, time.time())).fetchone():
-                continue
-            thread = get("threads/" + item["id"], format="full")
-            try:
-                processed = analyze(db, thread, settings, owner)
-            except Exception as exc:
+    profile = get("profile")
+    owner = profile["emailAddress"]
+    history_sync.update(db,get,owner,profile["historyId"])
+    waiting = db.execute("""SELECT thread FROM gmail_work WHERE owner=? AND NOT EXISTS(
+        SELECT 1 FROM mail_retry WHERE mail_retry.thread=? || '/' || gmail_work.thread
+        AND retry_at>?) ORDER BY rowid LIMIT 4""",(owner,owner,time.time())).fetchall()
+    for (key,) in waiting:
+        try:
+            thread = get("threads/" + key, format="full")
+            analyze(db, thread, settings, owner)
+        except Exception as exc:
+            if getattr(getattr(exc,"response",None),"status_code",None) != 404:
                 with db:
-                    db.execute("INSERT OR REPLACE INTO mail_retry VALUES(?,?)", (tid, time.time()+900))
-                print(f"Gmail model analysis deferred ({type(exc).__name__})", file=sys.stderr)
-                processed = True
-            if processed:
-                budget -= 1
-                if not budget:
-                    break
-        page = batch.get("nextPageToken")
-        if not page:
-            break
+                    db.execute("INSERT OR REPLACE INTO mail_retry VALUES(?,?)",
+                               (owner+"/"+key,time.time()+900))
+                print(f"Gmail analysis deferred ({type(exc).__name__})",file=sys.stderr)
+                continue
+            # Missing Gmail threads can be deleted between history sync and fetch.
+            # A model endpoint 404 should remain retryable.
+            if not getattr(exc.response,"url","").startswith(root+"threads/"):
+                continue
+        with db:
+            db.execute("DELETE FROM gmail_work WHERE owner=? AND thread=?", (owner,key))

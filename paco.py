@@ -1,5 +1,7 @@
 """Paco's offline reminder service. Run python3 paco.py --help."""
+import actions
 import discovery
+import planning
 import argparse
 import json
 import os
@@ -24,6 +26,7 @@ def connect(path):
         id INTEGER PRIMARY KEY, title TEXT NOT NULL, priority INTEGER NOT NULL,
         state TEXT NOT NULL, due REAL NOT NULL, nudges INTEGER NOT NULL DEFAULT 0
     )""")
+    planning.initialize(db)
     return db
 
 
@@ -31,14 +34,14 @@ def tick(db, now, deliver):
     # Serialize workers and user actions so a committed completion suppresses delivery.
     with db:
         db.execute("BEGIN IMMEDIATE")
-        task = db.execute("""SELECT * FROM task WHERE state IN ('open','focus')
-            AND due <= ? ORDER BY priority DESC, due, id LIMIT 1""", (now,)).fetchone()
+        if planning.reason_to_wait(db, now):
+            return
+        task = planning.ranked(db, now).fetchone()
         if task is None:
             return
-        prompts = ("Time to start", "Still waiting on you", "Come on. Take the first step")
-        prompt = ("Focus check-in" if task["state"] == "focus"
-                  else prompts[min(task["nudges"], len(prompts) - 1)])
+        prompt = planning.prompt(db, task, now)
         deliver(f"{prompt}: {task['title']} (#{task['id']})")
+        db.execute("INSERT INTO intervention VALUES(?,?,?)", (task["id"], "notify", now))
         db.execute("""UPDATE task SET state='open', nudges=nudges+1, due=?
                       WHERE id=?""", (now + 900, task["id"]))
 
@@ -58,6 +61,11 @@ def install():
     target = ROOT / "paco.py"
     if Path(__file__).resolve() != target:
         shutil.copyfile(__file__, target)
+        shutil.copyfile(discovery.projects.__file__, ROOT / "projects.py")
+        shutil.copyfile(Path(__file__).with_name("desktop.py"), ROOT / "desktop.py")
+        shutil.copyfile(discovery.mail_reasoning.history_sync.__file__, ROOT / "history_sync.py")
+        shutil.copyfile(actions.__file__, ROOT / "actions.py")
+        shutil.copyfile(planning.__file__, ROOT / "planning.py")
         shutil.copyfile(discovery.__file__, ROOT / "discovery.py")
         shutil.copyfile(discovery.mail_reasoning.__file__, ROOT / "mail_reasoning.py")
     plist = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
@@ -99,20 +107,106 @@ def main(argv=None):
             command.add_argument("minutes", type=int)
     for name in ("list", "run", "sync", "install"):
         commands.add_parser(name)
+    for name in ("plan", "review", "activity", "desktop"):
+        commands.add_parser(name)
+    draft = commands.add_parser("draft-comment")
+    draft.add_argument("id", type=int)
+    draft.add_argument("body")
+    publish = commands.add_parser("publish")
+    publish.add_argument("draft")
+    evidence = commands.add_parser("evidence")
+    evidence.add_argument("id", type=int)
+    track = commands.add_parser("track")
+    track.add_argument("path")
+    prefer = commands.add_parser("set")
+    prefer.add_argument("key", choices=["goal", "hours", "language", "voice"])
+    prefer.add_argument("value")
+    detail = commands.add_parser("estimate")
+    detail.add_argument("id", type=int)
+    detail.add_argument("minutes", type=int)
+    detail.add_argument("--goal")
+    detail.add_argument("--deadline", help="ISO date and local time")
     args = parser.parse_args(argv)
     if args.cmd == "install":
         if args.db != ROOT / "tasks.sqlite3":
             parser.error("install uses the default database")
         return install()
+    if args.cmd == "desktop":
+        import desktop
+        return desktop.open_window(args.db,connect,planning)
     with closing(connect(args.db)) as db:
         now = time.time()
+        if args.cmd == "draft-comment":
+            print(actions.draft(db,args.id,args.body))
+            return
+        if args.cmd == "publish":
+            config = json.loads(discovery.CONFIG.read_text())
+            print(actions.publish(db,args.draft,*config["github"]))
+            return
+        if args.cmd == "evidence":
+            tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "discovered" in tables:
+                for source, key in db.execute("SELECT source,key FROM discovered WHERE task_id=?", (args.id,)):
+                    print(source, key)
+            if "mail_task" in tables:
+                for row in db.execute("SELECT thread,message,quote FROM mail_task WHERE task=?", (args.id,)):
+                    print(json.dumps(dict(row),ensure_ascii=False))
+                for row in db.execute("SELECT message,quote FROM mail_resolution WHERE task=?", (args.id,)):
+                    print(json.dumps(dict(row),ensure_ascii=False))
+            return
+        if args.cmd == "track":
+            return discovery.projects.track(db, args.path)
+        if args.cmd == "activity":
+            print(json.dumps(list(discovery.projects.activity(db)), ensure_ascii=False, indent=2))
+            return
+        if args.cmd == "set":
+            if args.key == "voice" and args.value not in ("on","off"):
+                parser.error("voice must be on or off")
+            if args.key == "language" and args.value not in ("en", "es"):
+                parser.error("language must be en or es")
+            if args.key == "hours":
+                import re
+                match = re.fullmatch(r"([0-9]{1,2})-([0-9]{1,2})", args.value)
+                if not match or not 0 <= int(match[1]) < int(match[2]) <= 24:
+                    parser.error("use local hours such as 9-18")
+            with db:
+                db.execute("INSERT OR REPLACE INTO preference VALUES(?,?)", (args.key, args.value))
+            return
+        if args.cmd == "estimate":
+            from datetime import datetime
+            if args.minutes < 1 or not db.execute("SELECT 1 FROM task WHERE id=?", (args.id,)).fetchone():
+                parser.error("supply a valid task id and positive minutes")
+            try:
+                deadline = datetime.fromisoformat(args.deadline).timestamp() if args.deadline else None
+            except ValueError:
+                parser.error("use an ISO deadline")
+            with db:
+                db.execute("INSERT OR REPLACE INTO details VALUES(?,?,?,?)",
+                           (args.id,args.goal,args.minutes,deadline))
+            return
+        if args.cmd == "plan":
+            wait = planning.reason_to_wait(db, now)
+            if wait:
+                print(wait)
+            else:
+                for row in planning.ranked(db, now):
+                    why = "deadline within a day" if row["urgent"] else (row["goal"] if row["aligned"] else "priority " + str(row["priority"]))
+                    print(f"#{row['id']} {row['title']} ({why})")
+            return
+        if args.cmd == "review":
+            print(json.dumps(planning.review(db, now), ensure_ascii=False, indent=2))
+            return
         if args.cmd == "sync":
             return discovery.sync(db)
         if args.cmd == "run":
             threading.Thread(target=sync_loop, args=(args.db,), daemon=True).start()
             while True:
                 try:
-                    tick(db, time.time(), notify)
+                    def deliver(message):
+                        notify(message)
+                        if planning.setting(db, "voice") == "on":
+                            subprocess.Popen(["/usr/bin/say", "--", message])
+                    tick(db, time.time(), deliver)
                 except (OSError, subprocess.SubprocessError, sqlite3.OperationalError) as exc:
                     print(exc, file=sys.stderr, flush=True)
                 time.sleep(60)
@@ -135,6 +229,7 @@ def main(argv=None):
             with db:
                 changed = db.execute("""UPDATE task SET state=?, due=?, nudges=0
                     WHERE id=? AND state!='done'""", (state, now + minutes * 60, args.id))
+                db.execute("INSERT INTO intervention VALUES(?,?,?)", (args.id,args.cmd,now))
                 if not changed.rowcount:
                     parser.error("no unfinished task with that ID")
 

@@ -1,6 +1,7 @@
 """Read-only sources feeding Paco's local reminders."""
 import argparse
 import json
+import projects
 import mail_reasoning
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ from urllib.parse import quote
 ROOT = Path.home() / "Library/Application Support/Paco"
 CONFIG = ROOT / "sources.json"
 SCOPES = ["https://www.googleapis.com/auth/" + name for name in
-          ("gmail.readonly", "calendar.events.readonly", "tasks.readonly")]
+          ("gmail.readonly", "calendar.events.readonly", "tasks.readonly", "drive.metadata.readonly")]
 def configure(args):
     if args[:1] == ["model"]:
         settings = mail_reasoning.configure(args[1:])
@@ -25,12 +26,20 @@ def configure(args):
         tmp.replace(CONFIG)
         return
     parser = argparse.ArgumentParser(prog="paco connect")
-    parser.add_argument("source", choices=["github", "google"])
+    parser.add_argument("source", choices=["github", "google", "linear"])
     parser.add_argument("--client", type=Path)
     opt = parser.parse_args(args)
     ROOT.mkdir(parents=True, exist_ok=True)
     config = json.loads(CONFIG.read_text()) if CONFIG.exists() else {}
-    if opt.source == "github":
+    if opt.source == "linear":
+        import keyring
+        from getpass import getpass
+        token = getpass("Linear read-only personal API key: ").strip()
+        if not token:
+            parser.error("missing Linear key")
+        keyring.set_password("paco.linear", "personal", token)
+        config["linear"] = True
+    elif opt.source == "github":
         exe = shutil.which("gh")
         if not exe:
             parser.error("install GitHub CLI and run gh auth login first")
@@ -73,7 +82,7 @@ def google_session():
     return AuthorizedSession(Credentials.from_authorized_user_info(json.loads(raw)))
 
 
-def google_rows(source, now):
+def google_rows(source, now, intervals=None):
     with google_session() as session:
         def get(url, params):
             response = session.get(url, params=params, timeout=15)
@@ -102,6 +111,9 @@ def google_rows(source, now):
                                for a in event.get("attendees", []))
                 if start and not declined and event.get("status") != "cancelled":
                     begins = datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp()
+                    ends = event.get("end", {}).get("dateTime")
+                    if intervals is not None and ends and event.get("transparency") != "transparent":
+                        intervals.append((begins, datetime.fromisoformat(ends.replace("Z", "+00:00")).timestamp()))
                     if begins > now:
                         yield event["id"], "Prepare for " + event.get("summary", "meeting"), begins - 900
 
@@ -137,10 +149,20 @@ def sync(db):
         return
     config = json.loads(CONFIG.read_text())
     sources = (["github"] if "github" in config else []) + (
-        ["tasks", "calendar", "gmail"] if config.get("google") else [])
+        ["tasks", "calendar", "drive", "gmail"] if config.get("google") else [])
+    if config.get("linear"):
+        sources.insert(0, "linear")
     for source in sources:
         try:
             now = time.time()
+            if source == "linear":
+                import keyring
+                reconcile(db, source, projects.linear_rows(keyring.get_password("paco.linear", "personal"), now), now)
+                continue
+            if source == "drive":
+                with google_session() as session:
+                    projects.drive(session, db)
+                continue
             if source == "gmail":
                 if config.get("model"):
                     with google_session() as session:
@@ -148,7 +170,12 @@ def sync(db):
                 else:
                     print("Gmail discovery requires paco.py connect model", file=sys.stderr)
                 continue
-            rows = github(config[source], now) if source == "github" else google_rows(source, now)
+            intervals = []
+            rows = github(config[source], now) if source == "github" else google_rows(source, now, intervals)
             reconcile(db, source, rows, now)
+            if source == "calendar":
+                with db:
+                    db.execute("DELETE FROM busy")
+                    db.executemany("INSERT INTO busy VALUES(?,?)", intervals)
         except Exception as exc:
             print(f"{source} sync failed ({type(exc).__name__}); retained prior tasks", file=sys.stderr)

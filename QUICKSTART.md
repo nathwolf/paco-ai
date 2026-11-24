@@ -20,7 +20,7 @@ python3 paco.py resume 1
 python3 paco.py done 1
 ```
 
-The service selects one eligible task per minute, highest priority first. An unanswered task becomes eligible again after 15 minutes. Focus and snooze delay that task. Block suspends it until resumed. Commands operate on local SQLite state. This version uses manual tasks and fixed reminder wording. It can deliver at any hour while the Mac is awake. A crash between notification delivery and database commit may repeat one alert.
+The service selects one eligible task per minute, highest priority first. An unanswered task becomes eligible again after 15 minutes. Focus and snooze delay that task. Block suspends it until resumed. Commands operate on local SQLite state. Use [connection and planning settings](CONNECT.md) for automatic discovery, working hours, desktop controls and personalized reminders. The default working window is all day. A crash between notification delivery and database commit may repeat one alert.
 
 To disable startup and stop the service, run:
 
