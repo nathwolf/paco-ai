@@ -20,3 +20,7 @@ Most productivity tools help you organize your work. Paco wants to make sure you
 Local-first. Your projects, conversations, and commitments should remain under your control.
 
 The goal isn't another productivity dashboard. It's an assistant that notices when you're falling behind and actually says something about it.
+
+## Development specification
+
+Start with the [requirements](REQUIREMENTS.md) and [milestones](ROADMAP.md). The [architecture](ARCHITECTURE.md) describes the background service and integrations. The [data model](DATA_MODEL.md) defines how Paco remembers commitments and reconciles evidence. See [AGENTS.md](AGENTS.md) for contributor instructions.
