@@ -1,4 +1,5 @@
 """Paco's offline reminder service. Run python3 paco.py --help."""
+import discovery
 import argparse
 import json
 import os
@@ -56,6 +57,7 @@ def install():
     target = ROOT / "paco.py"
     if Path(__file__).resolve() != target:
         shutil.copyfile(__file__, target)
+        shutil.copyfile(discovery.__file__, ROOT / "discovery.py")
     plist = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
     plist.parent.mkdir(parents=True, exist_ok=True)
     config = dict(Label=LABEL, ProgramArguments=[sys.executable, str(target), "run"],
@@ -71,6 +73,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, default=ROOT / "tasks.sqlite3")
     commands = parser.add_subparsers(dest="cmd", required=True)
+    arguments = sys.argv[1:] if argv is None else argv
+    if arguments[:1] == ["connect"]:
+        return discovery.configure(arguments[1:])
+    commands.add_parser("connect", help="connect github or google")
     add = commands.add_parser("add")
     add.add_argument("title")
     add.add_argument("--priority", type=int, choices=range(1, 6), default=3)
@@ -79,7 +85,7 @@ def main(argv=None):
         command.add_argument("id", type=int)
         if name in ("start", "snooze"):
             command.add_argument("minutes", type=int)
-    for name in ("list", "run", "install"):
+    for name in ("list", "run", "sync", "install"):
         commands.add_parser(name)
     args = parser.parse_args(argv)
     if args.cmd == "install":
@@ -88,9 +94,15 @@ def main(argv=None):
         return install()
     with closing(connect(args.db)) as db:
         now = time.time()
+        if args.cmd == "sync":
+            return discovery.sync(db)
         if args.cmd == "run":
+            next_sync = 0
             while True:
                 try:
+                    if time.monotonic() >= next_sync:
+                        discovery.sync(db)
+                        next_sync = time.monotonic() + 300
                     tick(db, time.time(), notify)
                 except (OSError, subprocess.SubprocessError, sqlite3.OperationalError) as exc:
                     print(exc, file=sys.stderr, flush=True)
