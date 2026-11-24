@@ -14,9 +14,14 @@ For Google, enable Gmail, Calendar and Tasks APIs in one Google Cloud project. C
 
 ```sh
 python paco.py connect google --client ~/Downloads/client_secret.json
+python paco.py connect model ollama YOUR_INSTALLED_MODEL
 python paco.py sync
 python paco.py list
 python paco.py install
 ```
 
-Connect either provider independently. Re-run install to update an older service. The service polls every five minutes. It discovers open Google Tasks, upcoming timed primary-calendar meetings and possible first-person commitments in recent sent Gmail snippets. Mail matches are review prompts; quoted text can match, and commitments outside snippets can be missed. Meeting reminders start fifteen minutes before the meeting and expire on the first successful sync after it begins. Superseded assignments disappear from the active queue after successful sync. Manual tasks remain available. Google authorization currently supports one account per installation; use a separate installation/database when switching identities. All extraction runs locally.
+Connect either provider independently. Re-run install to update an older service. The service polls every five minutes. It discovers open Google Tasks and upcoming timed primary-calendar meetings. Gmail discovery reads incoming and outgoing threads active in the last seven days, with no phrase filter. It analyzes up to four changed threads per cycle, using up to twelve recent messages and 4,500 characters of body text per message. Attachments are excluded. A later reply can resolve an existing task when the model identifies supporting text. Check inferred tasks: a valid quotation does not guarantee the model understood it.
+
+Start Ollama and install a chat model that supports JSON output before selecting the local option. Alternatively run `python paco.py connect model openai YOUR_MODEL --allow-cloud-mail` and enter the API key at the hidden prompt. This explicitly permits sending thread excerpts, sender and recipient details, and existing same-thread tasks to OpenAI. Credentials are stored through keyring. Re-run install after updating the checkout. Reminders continue independently while the sync worker waits for a model.
+
+To check a configured model's judgment on synthetic conversations, run `python eval_mail.py`. No personal email is used in this evaluation.
