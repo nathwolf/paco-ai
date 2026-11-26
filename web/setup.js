@@ -58,16 +58,17 @@ async function refresh(){const [r,c]=await Promise.all([fetch('/api/state'),fetc
  }
 }
 function renderProjects(s){
+ const projects=s.projects.filter(p=>p.user_created);
  const list=$('#project-list');
- list.replaceChildren(...s.projects.map(p=>{const row=node('div',undefined,'source');const label=node('span',p.name);
+ list.replaceChildren(...projects.map(p=>{const row=node('div',undefined,'source');const label=node('span',p.name);
   label.append(node('small',[p.area,p.hints&&('hints: '+p.hints)].filter(Boolean).join(' · ')||'No hints yet: Paco’s model sorts tasks'));
   const actions=node('div',undefined,'row');const edit=node('button','Edit','quiet');edit.type='button';
   edit.onclick=()=>{const f=$('#project-form');f.elements.id.value=p.id;f.elements.name.value=p.name;f.elements.area.value=p.area;f.elements.hints.value=p.hints;$('#project-new').open=true;f.elements.name.focus();};
   const del=node('button','Delete','danger');del.type='button';del.onclick=async()=>{if(!confirm('Delete '+p.name+'? Its tasks stay, without a project.'))return;try{await act({action:'project_delete',id:p.id});saved('Deleted');await refresh();}catch(e){notice(e.message);}};
   actions.append(edit,del);row.append(label,actions);return row;}));
- if(!s.projects.length)list.replaceChildren(node('p','Projects appear as connected work arrives. Add a project now to teach Paco your own names, areas and clues.','hint'));
+ if(!projects.length)list.replaceChildren(node('p','Add a project to teach Paco your names, areas and clues.','hint'));
  const select=$('#focus-project'),chosen=s.focus?String(s.focus.id):'';
- select.replaceChildren(node('option','All projects'),...s.projects.map(p=>{const o=node('option',p.name+(p.area?' · '+p.area:''));o.value=String(p.id);return o;}));select.options[0].value='';select.value=chosen;
+ select.replaceChildren(node('option','All projects'),...projects.map(p=>{const o=node('option',p.name+(p.area?' · '+p.area:''));o.value=String(p.id);return o;}));select.options[0].value='';select.value=chosen;
  $('#focus-status').textContent=s.focus?'Focusing on '+s.focus.name+' until the end of today. Other projects stay quiet unless they’re urgent.':'Until the end of today, only the chosen project checks in. Anything you marked urgent still does.';
 }
 async function saveRhythm(){const f=$('#rhythm-form');const days=[...$('#days').querySelectorAll('input:checked')].map(n=>n.value).join(',');if(!days)throw Error('Choose at least one working day');if(Number(f.elements.start.value)>=Number(f.elements.end.value))throw Error('The end of your working day must be after its start');await act({action:'preference',key:'hours',value:f.elements.start.value+'-'+f.elements.end.value});await act({action:'preference',key:'workdays',value:days});await act({action:'preference',key:'mode',value:$('#mode').value});}
