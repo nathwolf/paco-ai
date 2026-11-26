@@ -70,6 +70,19 @@ class Providers(unittest.TestCase):
         self.assertIn('read-only', self.args)
         self.assertEqual(self.args[-3:], ['-m', 'gpt-5', '-'])
 
+    def test_interactive_codex_uses_low_reasoning_without_changing_analysis(self):
+        for source in ('chat', 'mattermost', 'meeting'):
+            calls=[]
+            def runner(args, prompt, timeout):
+                calls.append(args)
+                return '{"ok":true}', '/nonexistent/paco-test'
+            config={'provider':'codex_cli','allowed_sources':[source]}
+            with patch('shutil.which',return_value='/opt/bin/codex'):
+                models.complete(config,'s',{},source,runner=runner)
+            self.assertEqual('model_reasoning_effort="low"' in calls[0],source!='meeting')
+            self.assertIn('--ignore-user-config',calls[0])
+            self.assertIn('read-only',calls[0])
+
     def test_local_servers_need_no_consent_but_remote_ones_do(self):
         seen = []
         body = {'choices': [{'message': {'content': '{"ok": true}'}}]}

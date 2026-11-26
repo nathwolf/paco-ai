@@ -139,6 +139,10 @@ def complete(config, system, data, source, transport=None, runner=None):
         else:
             args = [exe, 'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--color', 'never',
                     '--ephemeral', '--ignore-user-config', '-o', 'answer.txt']
+            # Interactive replies should not inherit a slow reasoning default.
+            # Keep deeper analysis (meetings, extraction, planning) unchanged.
+            if source in ('chat', 'mattermost'):
+                args += ['-c', 'model_reasoning_effort="low"']
             if config.get('model'):
                 args += ['-m', config['model']]
             stdout, folder = run(args + ['-'], prompt, 180)

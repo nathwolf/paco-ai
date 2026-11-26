@@ -301,7 +301,7 @@ def worker(path, connect, stop):
             if db.execute("SELECT 1 FROM waiting WHERE status='waiting' AND due<=?",(now,)).fetchone():
                 workflows.run_automations(db,now,event='missing_reply')
     gate = lambda: presence.active()
-    for name,interval,step in (('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('Mattermost chat',15,mattermost_chat),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
+    for name,interval,step in (('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('Mattermost chat',3,mattermost_chat),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
         threading.Thread(target=run_loop,args=(name,stop,interval,step,report,gate),daemon=True).start()
     try:
         run_loop('reminders',stop,TICK_INTERVAL,reminders,report,gate)

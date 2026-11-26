@@ -373,7 +373,9 @@ the owner's direct message with Paco; other participants cannot modify that acco
 
 Controls → Sources → Mattermost has **Reply to @paco in groups and channels**.
 Like private replies, it runs while this Mac is awake and unlocked, checking roughly
-every 15 seconds. No new server service or administrator bot privileges are required.
+with a 3-second pause between checks. Codex-backed chat and Mattermost replies use low
+reasoning effort; meeting analysis and other background reasoning keep their existing settings.
+No new server service or administrator bot privileges are required.
 Delivery receipts prevent replaying replies or creating tasks twice after an uncertain
 network response. An uncertain send is reconciled against bot-authored receipts, never
 blindly retried. Shared conversation text is fetched for the reply, not copied into the
