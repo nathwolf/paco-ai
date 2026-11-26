@@ -48,3 +48,4 @@ article>label{margin-top:18px}
 .segment-head small{flex-basis:100%}
 .segment time{font-size:12px;font-weight:800;color:var(--muted);min-width:34px}
 #delete-transcript,#delete-meeting{color:var(--alarm-text)}
+.upcoming-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;margin-top:8px}.upcoming-event{padding:11px 13px;border-radius:12px;background:var(--field);display:flex;align-items:center;justify-content:space-between;gap:12px}.upcoming-event strong{font-size:13px;font-weight:650;display:block}.upcoming-event small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.upcoming-event a{font-size:16px;text-decoration:none;color:var(--sky-text);padding:4px}.upcoming-empty{font-size:12px;color:var(--muted);margin:8px 0}.upcoming-header{display:flex;align-items:center;justify-content:space-between}.upcoming-header small{color:var(--muted);font-size:11px}

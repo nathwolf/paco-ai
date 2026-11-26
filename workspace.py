@@ -6,28 +6,94 @@ from task_contract import clean_task
 
 
 def initialize(db):
-    db.execute('''CREATE TABLE IF NOT EXISTS focus_session(id INTEGER PRIMARY KEY, intention TEXT NOT NULL,
-        task INTEGER, started REAL NOT NULL, ends REAL NOT NULL, stopped REAL)''')
+    db.executescript('''CREATE TABLE IF NOT EXISTS focus_session(id INTEGER PRIMARY KEY, intention TEXT NOT NULL,
+        task INTEGER, started REAL NOT NULL, ends REAL NOT NULL, stopped REAL);
+        CREATE TABLE IF NOT EXISTS focus_timing(session INTEGER PRIMARY KEY,duration REAL NOT NULL,
+        remaining REAL NOT NULL,phase TEXT NOT NULL,break_minutes INTEGER NOT NULL DEFAULT 0,
+        break_until REAL,completed_at REAL);''')
+    with db:
+        db.execute("""INSERT OR IGNORE INTO focus_timing(session,duration,remaining,phase,completed_at)
+          SELECT id,MAX(0,ends-started),CASE WHEN stopped IS NULL THEN MAX(0,ends-started) ELSE MAX(0,ends-stopped) END,
+          CASE WHEN stopped IS NULL THEN 'focus' WHEN stopped>=ends THEN 'completed' ELSE 'stopped' END,
+          CASE WHEN stopped>=ends THEN ends ELSE NULL END FROM focus_session""")
+
+
+def describe(row,now):
+    item=dict(row);phase=item['phase'];remaining=item['remaining']
+    if phase=='focus':
+        remaining=max(0,item['ends']-now)
+        if remaining==0:
+            item['completed_at']=item['ends']
+            item['break_until']=item['ends']+item['break_minutes']*60
+            phase='break' if item['break_until']>now else 'completed'
+    elif phase=='break' and item['break_until']<=now:
+        phase='paused' if remaining>0 else 'completed'
+    item.update(phase=phase,remaining=remaining,successful=item['completed_at'] is not None)
+    item['focused_seconds']=item['duration'] if item['successful'] else max(0,item['duration']-remaining)
+    return item
+
+
+def history(db,now=None,limit=20):
+    now=time.time() if now is None else now
+    return [describe(r,now) for r in db.execute("""SELECT s.*,f.duration,f.remaining,f.phase,f.break_minutes,f.break_until,f.completed_at
+        FROM focus_session s JOIN focus_timing f ON f.session=s.id ORDER BY s.id DESC LIMIT ?""",(limit,))]
 
 
 def active(db, now=None):
-    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='focus_session'").fetchone():return None
-    row=db.execute('SELECT * FROM focus_session WHERE stopped IS NULL AND ends>? ORDER BY id DESC LIMIT 1',
-                   (time.time() if now is None else now,)).fetchone()
-    return dict(row) if row else None
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='focus_timing'").fetchone():return None
+    now=time.time() if now is None else now
+    for item in history(db,now):
+        if item['stopped'] is None and item['phase'] in ('focus','break','paused'):return item
+    return None
+
+
+def stats(db,now=None):
+    now=time.time() if now is None else now
+    rows=db.execute("""SELECT s.*,f.duration,f.remaining,f.phase,f.break_minutes,f.break_until,f.completed_at
+        FROM focus_session s JOIN focus_timing f ON f.session=s.id
+        WHERE s.ends>=? OR f.completed_at>=?""",(now-7*86400,now-7*86400))
+    completed=[r for r in (describe(row,now) for row in rows) if r['completed_at'] is not None and now-7*86400<=r['completed_at']<=now]
+    return dict(completed=len(completed),minutes=round(sum(r['duration'] for r in completed)/60),days=7)
 
 
 def start(db, data, now):
-    minutes=data.get('minutes',25)
+    minutes=data.get('minutes',25);break_minutes=data.get('break_minutes',0)
     intention=str(data.get('intention','')).strip()
     if type(minutes) is not int or not 1<=minutes<=240:raise ValueError('Choose 1–240 minutes')
+    if type(break_minutes) is not int or not 0<=break_minutes<=30:raise ValueError('Choose a break of up to 30 minutes')
     if not intention or len(intention)>500:raise ValueError('Describe your focus in up to 500 characters')
     task=data.get('task')
     if task is not None and not db.execute("SELECT 1 FROM task WHERE id=? AND state NOT IN ('done','archived','cancelled','incorrect')",(task,)).fetchone():raise ValueError('Choose an active task')
     with db:
+        if not db.in_transaction:db.execute('BEGIN IMMEDIATE')
         if active(db,now):raise ValueError('Finish your current focus session first')
         ident=db.execute('INSERT INTO focus_session(intention,task,started,ends) VALUES(?,?,?,?)',(intention,task,now,now+minutes*60)).lastrowid
+        db.execute("INSERT INTO focus_timing VALUES(?,?,?,'focus',?,NULL,NULL)",(ident,minutes*60,minutes*60,break_minutes))
     return {'id':ident}
+
+
+def change_focus(db,ident,action,now,minutes=5):
+    if action not in ('pause','resume','stop'):raise ValueError('Unknown focus action')
+    with db:
+        if not db.in_transaction:db.execute('BEGIN IMMEDIATE')
+        row=db.execute("""SELECT s.*,f.duration,f.remaining,f.phase,f.break_minutes,f.break_until,f.completed_at
+            FROM focus_session s JOIN focus_timing f ON f.session=s.id WHERE s.id=?""",(ident,)).fetchone()
+        if not row:raise ValueError('Session not found')
+        item=describe(row,now)
+        if action=='stop':
+            if item['stopped'] is not None:return {'ok':True}
+            db.execute('UPDATE focus_session SET stopped=? WHERE id=?',(now,ident))
+            db.execute('UPDATE focus_timing SET phase=?,remaining=?,completed_at=? WHERE session=?',
+                       ('completed' if item['successful'] else 'stopped',item['remaining'],item['completed_at'],ident))
+        elif action=='pause':
+            if item['stopped'] is not None or item['phase']!='focus':raise ValueError('Only a running focus timer can pause')
+            if type(minutes) is not int or not 1<=minutes<=30:raise ValueError('Choose a 1–30 minute break')
+            db.execute("UPDATE focus_timing SET remaining=?,phase='break',break_until=? WHERE session=?",(item['remaining'],now+minutes*60,ident))
+        else:
+            if item['stopped'] is not None or item['phase'] not in ('break','paused') or item['remaining']<=0:raise ValueError('There is no unfinished focus time to resume')
+            db.execute('UPDATE focus_session SET ends=? WHERE id=?',(now+item['remaining'],ident))
+            db.execute("UPDATE focus_timing SET phase='focus',break_until=NULL WHERE session=?",(ident,))
+    return {'ok':True}
 
 
 def edit_task(db, data, commit=True):

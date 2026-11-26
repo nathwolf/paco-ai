@@ -49,6 +49,12 @@ def candidates(db,now=None):
     return result
 
 
+def upcoming(db,now=None):
+    now=time.time() if now is None else now
+    return [dict(r) for r in db.execute("""SELECT id,title,start,end,url FROM calendar_event
+        WHERE end>? AND start<? ORDER BY start,id LIMIT 12""",(now,now+7*86400))]
+
+
 def suggested_event(events,now=None):
     now=time.time() if now is None else now
     current=[e for e in events if e['start']<=now<e['end']]

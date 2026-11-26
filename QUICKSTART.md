@@ -378,3 +378,22 @@ Delivery receipts prevent replaying replies or creating tasks twice after an unc
 network response. An uncertain send is reconciled against bot-authored receipts, never
 blindly retried. Shared conversation text is fetched for the reply, not copied into the
 company database. The local queue retains the answer and delivery metadata.
+
+### Focus sessions, breaks and your tree
+
+Sessions has a focus timer and a tree for the last seven days. Each timer that finishes
+its planned focus time earns one parrot; ending early does not. The counters show completed
+sessions and their focus minutes. These are completed timers, not an AI judgment that the
+work was successful. Older sessions fall out of the rolling seven-day window. A larger
+flock grows onto additional trees you can scroll through.
+
+Choose **Add a break after focusing** for a Pomodoro-style focus/rest cycle. You can also
+choose **Take a break** during a session: Paco saves the remaining focus time and keeps
+reminders quiet. When that break ends, the focus timer waits for **Resume focus**, so time
+doesn't run out while you are away. A completed session's final break ends on its own;
+start the next focus session when ready. Pauses and remaining time survive an app restart.
+
+Meetings shows up to 12 current/upcoming events from connected calendars over the next
+seven days. The cloud icon is green when company sync is current with no pending changes
+or conflicts, and red otherwise; hover it for the reason. Interface labels do not select
+accidentally; inputs, chat replies, task titles and meeting notes remain copyable.

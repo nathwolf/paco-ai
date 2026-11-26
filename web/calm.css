@@ -10,3 +10,6 @@ h2,h3{font-weight:650}button,button.primary,.primary{border-radius:12px;font-wei
 @media(prefers-reduced-motion:reduce){button.primary:active,#start-meeting:active{transform:none!important}}
 
 :root[data-theme="dark"]{color-scheme:dark}
+
+/* App controls behave like controls; actual notes remain copyable. */
+body{-webkit-user-select:none;user-select:none}input,textarea,[contenteditable],.segment p,.evidence,.item p{-webkit-user-select:text;user-select:text}img{-webkit-user-drag:none}.embedded main{padding-top:0}.embedded main>section:first-of-type{padding-top:0}#calendar-context{margin:0 0 8px;padding:8px 11px;font-size:12px}#capture-status{font-size:14px;margin-bottom:4px}.embedded section{padding:10px 0}.embedded .hint{margin:5px 0;font-size:12px}.embedded .control-group{margin-bottom:8px}.embedded main>details{margin:4px 0}

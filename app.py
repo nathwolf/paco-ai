@@ -343,7 +343,7 @@ def state(db):
             'activity_model':config.get('activity_model'),
             'agents':[dict(r) for r in db.execute('SELECT * FROM agent_connection')],
             'sessions':sessions,'focus_session':workspace.active(db,now),
-            'focus_history':[dict(r) for r in db.execute('SELECT * FROM focus_session ORDER BY id DESC LIMIT 20')],
+            'focus_history':workspace.history(db,now),'focus_stats':workspace.stats(db,now),
             'conversation':[dict(r) for r in db.execute('SELECT role,text FROM (SELECT * FROM conversation ORDER BY id DESC LIMIT 20) ORDER BY id')],
             'waiting':[dict(r) for r in db.execute('SELECT * FROM waiting ORDER BY due')],
             'automations':[dict(r) for r in db.execute('SELECT * FROM automation')],
@@ -368,9 +368,8 @@ def act(db,path,connect,data):
     now = time.time()
     if action=='task_edit':return workspace.edit_task(db,data)
     if action=='focus_start':return workspace.start(db,data,now)
-    if action=='focus_stop':
-        with db:db.execute('UPDATE focus_session SET stopped=? WHERE id=? AND stopped IS NULL',(now,int(data['id'])))
-        return {'ok':True}
+    if action in ('focus_stop','focus_pause','focus_resume'):
+        return workspace.change_focus(db,int(data['id']),action.removeprefix('focus_'),now,data.get('minutes',5))
     if action=='intake_preview':
         return intake.preview(db,data.get('text',''),settings().get('model'))
     if action=='intake_apply':
@@ -857,7 +856,7 @@ def make_server(path,connect,port=0):
                     return self.respond({'meetings':meetings.list_notes(db),'preferences':meetings.preferences(db),
                         'speech':meeting_audio.readiness(),'active':meeting_audio.active(path),
                         'model':settings().get('meeting_model') or settings().get('model'),
-                        'model_override':settings().get('meeting_model'),'calendar_candidates':meeting_identity.candidates(db),'suggested_event':meeting_identity.suggested_event(meeting_identity.candidates(db))})
+                        'upcoming_meetings':meeting_identity.upcoming(db),'model_override':settings().get('meeting_model'),'calendar_candidates':meeting_identity.candidates(db),'suggested_event':meeting_identity.suggested_event(meeting_identity.candidates(db))})
             if parsed.path=='/api/companion':
                 import startup
                 with closing(connect(path)) as db:
@@ -913,7 +912,7 @@ def make_server(path,connect,port=0):
                      '/advanced':BASE/'web/index.html','/app.js':BASE/'web/app.js','/style.css':BASE/'web/style.css'}
             if parsed.path.startswith('/assets/'):
                 name = Path(parsed.path).name
-                if name in {e['file'] for e in EXPRESSIONS.values()}:
+                if name in {e['file'] for e in EXPRESSIONS.values()}|{'focus-tree-v1.png','focus-parrot-v1.png'}:
                     files[parsed.path] = BASE/'assets/icons'/name
                 elif name=='paco-screech.wav':
                     files[parsed.path] = BASE/'assets/sounds'/name

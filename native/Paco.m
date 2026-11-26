@@ -164,7 +164,8 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     if(!self.window) {
         WKWebViewConfiguration *config=[WKWebViewConfiguration new];[config.userContentController addScriptMessageHandler:self name:@"paco"];
         self.web=[[WKWebView alloc] initWithFrame:NSZeroRect configuration:config];self.web.navigationDelegate=self;self.web.underPageBackgroundColor=NSColor.windowBackgroundColor;
-        self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,960,740) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
+        self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,960,740) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable|NSWindowStyleMaskFullSizeContentView backing:NSBackingStoreBuffered defer:NO];
+        self.window.titleVisibility=NSWindowTitleHidden;self.window.titlebarAppearsTransparent=YES;self.window.titlebarSeparatorStyle=NSTitlebarSeparatorStyleNone;
         self.window.contentMinSize=NSMakeSize(640,480);self.window.releasedWhenClosed=NO;self.window.contentView=self.web;[self.window center];
     }
     self.window.title=title;

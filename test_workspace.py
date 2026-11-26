@@ -46,3 +46,51 @@ class Workspace(unittest.TestCase):
         result=workspace.edit_task(self.db,{'changes':{'title':'A complete task','tags':['client'],'deadline':1800000000}})
         row=self.db.execute('SELECT tags FROM task_extra WHERE task=?',(result['id'],)).fetchone()
         self.assertEqual(json.loads(row[0]),['client'])
+    def test_pause_preserves_remaining_time_across_restart_and_resume(self):
+        now=1800000000
+        ident=workspace.start(self.db,{'intention':'Write','minutes':25},now)['id']
+        workspace.change_focus(self.db,ident,'pause',now+300,5)
+        self.assertEqual(workspace.active(self.db,now+400)['phase'],'break')
+        self.assertEqual(workspace.active(self.db,now+400)['remaining'],1200)
+        self.assertEqual(workspace.active(self.db,now+900)['phase'],'paused')
+        self.assertEqual(planning.reason_to_wait(self.db,now+900),'Focus session in progress')
+        workspace.initialize(self.db)
+        workspace.change_focus(self.db,ident,'resume',now+900)
+        self.assertEqual(workspace.active(self.db,now+901)['ends'],now+2100)
+        self.assertEqual(workspace.stats(self.db,now+2000)['completed'],0)
+        self.assertEqual(workspace.stats(self.db,now+2100),{'completed':1,'minutes':25,'days':7})
+        self.assertIsNone(workspace.active(self.db,now+2100))
+    def test_pomodoro_break_earns_exactly_one_parrot_and_never_starts_work_unattended(self):
+        now=1800000000
+        ident=workspace.start(self.db,{'intention':'Read','minutes':25,'break_minutes':5},now)['id']
+        self.assertEqual(workspace.active(self.db,now+1500)['phase'],'break')
+        self.assertTrue(workspace.active(self.db,now+1500)['successful'])
+        for moment in [now+1500,now+1600,now+1800,now+86400]:self.assertEqual(workspace.stats(self.db,moment)['completed'],1)
+        with self.assertRaises(ValueError):workspace.change_focus(self.db,ident,'resume',now+1600)
+        self.assertIsNone(workspace.active(self.db,now+1800))
+        self.assertEqual(workspace.stats(self.db,now+1501+7*86400)['completed'],0)
+    def test_ending_early_during_a_pause_does_not_earn_a_parrot(self):
+        now=1800000000
+        ident=workspace.start(self.db,{'intention':'Work','minutes':25},now)['id']
+        workspace.change_focus(self.db,ident,'pause',now+120)
+        workspace.change_focus(self.db,ident,'stop',now+180)
+        workspace.change_focus(self.db,ident,'stop',now+181)
+        self.assertEqual(workspace.stats(self.db,now+86400)['completed'],0)
+        self.assertEqual(workspace.history(self.db,now+86400)[0]['focused_seconds'],120)
+        self.assertIsNone(workspace.active(self.db,now+181))
+    def test_ending_after_goal_keeps_success_and_invalid_breaks_do_not_change_session(self):
+        now=1800000000
+        for pause in [-1,31,True]:
+            with self.assertRaises(ValueError):workspace.start(self.db,{'intention':'Work','break_minutes':pause},now)
+        ident=workspace.start(self.db,{'intention':'Work','minutes':1,'break_minutes':5},now)['id']
+        with self.assertRaises(ValueError):workspace.change_focus(self.db,ident,'pause',now+10,0)
+        self.assertEqual(workspace.active(self.db,now+10)['phase'],'focus')
+        workspace.change_focus(self.db,ident,'stop',now+61)
+        self.assertEqual(workspace.stats(self.db,now+100)['completed'],1)
+    def test_upcoming_calendar_window_excludes_finished_and_far_events(self):
+        import meeting_identity
+        now=1800000000
+        with self.db:
+            for ident,start,end in [('past',now-100,now-1),('current',now-50,now+50),('next',now+86400,now+86500),('far',now+8*86400,now+8*86400+100)]:
+                self.db.execute('INSERT INTO calendar_event VALUES(?,?,?,?,?,?,?,?)',(ident,'cal',ident,start,end,'https://example.test/event','v','[]'))
+        self.assertEqual([e['id'] for e in meeting_identity.upcoming(self.db,now)],['current','next'])

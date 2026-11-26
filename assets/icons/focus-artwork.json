@@ -1,0 +1,14 @@
+{
+  "generator": "Built-in image_gen",
+  "transparent_background": true,
+  "assets": [
+    {
+      "file": "focus-tree-v1.png",
+      "prompt": "Create a production illustration asset for Paco, a friendly parrot productivity app with soft rounded educational-game vibes, gentler than Duolingo. One beautiful stylized tree, isolated on a genuinely transparent background, square composition. A warm brown branching trunk with 5 clearly visible horizontal perching branches at multiple heights, loose rounded clusters of sage and olive-green leaves, soft subtle 3D painted shading, smooth tactile shapes, welcoming calm mood. Full tree visible including a small mossy ground mound, centered with narrow margins. No birds or other animals: the application will place parrot sprites on the branches dynamically. Leave open spaces between foliage for those birds. No text, no labels, no panel, no background scenery, no border, no watermark. Crisp silhouette, restrained colors, readable at 400 pixels, polished app illustration."
+    },
+    {
+      "file": "focus-parrot-v1.png",
+      "prompt": "Use case: stylized-concept. Asset: one small parrot sprite for a calm focus-session reward tree in Paco. A single adorable plump green parrot, full body including two tiny visible feet and a short tapered tail, in three-quarter view facing slightly left. Soft tactile rounded 3D storybook illustration, gentle olive and leaf-green feathers, warm pale yellow cheek and chest, small curved peach-orange beak, warm dark expressive eyes, friendly content expression. Simple readable silhouette and subtle painted shading. No hat, no clothing, no props, no branch, no other birds, no ground, no text, no border, no shadow outside the character. Truly transparent background. Centered with minimal empty margin. Must be legible as a 45-pixel sprite, feet ready to rest on a branch. Similar gentle playful educational-app atmosphere as Paco, with restraint, not an exact copy of any existing mascot."
+    }
+  ]
+}
