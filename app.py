@@ -484,7 +484,7 @@ def act(db,path,connect,data):
         return {'ok':True}
     if action == 'preference':
         key,value = data['key'],str(data['value'])
-        allowed = {'mode':('work','holiday','paused'),'language':('en','es'),'voice':('on','off'),'discover_automations':('on','off'),'capture':('on','off')}
+        allowed = {'theme':('system','light','dark'),'mode':('work','holiday','paused'),'language':('en','es'),'voice':('on','off'),'discover_automations':('on','off'),'capture':('on','off')}
         if key in allowed and value not in allowed[key]:
             raise ValueError('Invalid preference')
         if key=='hours':
@@ -856,7 +856,7 @@ def make_server(path,connect,port=0):
                                 continue
                         return self.respond(banner_payload(db,row))
                     return self.respond(None)
-            files = {'/':BASE/'web/workspace.html','/workspace.js':BASE/'web/workspace.js','/workspace.css':BASE/'web/workspace.css','/embedded.js':BASE/'web/embedded.js','/calm.css':BASE/'web/calm.css','/controls':BASE/'web/setup.html','/meetings':BASE/'web/meetings.html','/meetings.js':BASE/'web/meetings.js','/meetings.css':BASE/'web/meetings.css','/setup.js':BASE/'web/setup.js','/setup.css':BASE/'web/setup.css',
+            files = {'/theme.js':BASE/'web/theme.js','/':BASE/'web/workspace.html','/workspace.js':BASE/'web/workspace.js','/workspace.css':BASE/'web/workspace.css','/embedded.js':BASE/'web/embedded.js','/calm.css':BASE/'web/calm.css','/controls':BASE/'web/setup.html','/meetings':BASE/'web/meetings.html','/meetings.js':BASE/'web/meetings.js','/meetings.css':BASE/'web/meetings.css','/setup.js':BASE/'web/setup.js','/setup.css':BASE/'web/setup.css',
                      '/advanced':BASE/'web/index.html','/app.js':BASE/'web/app.js','/style.css':BASE/'web/style.css'}
             if parsed.path.startswith('/assets/'):
                 name = Path(parsed.path).name
@@ -867,7 +867,13 @@ def make_server(path,connect,port=0):
             file = files.get(parsed.path)
             if not file or not file.is_file():
                 return self.respond({'error':'Not found'},404)
-            return self.respond(file.read_bytes(),content=mimetypes.guess_type(str(file))[0] or 'application/octet-stream')
+            raw = file.read_bytes()
+            if file.suffix == '.html':
+                with closing(connect(path)) as db:
+                    row = db.execute("SELECT value FROM preference WHERE key='theme'").fetchone()
+                theme = row[0] if row and row[0] in ('system','light','dark') else 'system'
+                raw = raw.replace(b'<html ', ('<html data-theme-preference="'+theme+'" ').encode(), 1)
+            return self.respond(raw,content=mimetypes.guess_type(str(file))[0] or 'application/octet-stream')
         def do_OPTIONS(self):
             origin=self.headers.get('Origin','')
             if self.path!='/api/speaker-signal' or not origin.startswith('chrome-extension://'):

@@ -6,17 +6,17 @@
   --alarm:#DE3324; --alarm-edge:#A82217; --alarm-soft:#FDE8E5; --alarm-text:#C3301F;
   --beak:#FFB020; --beak-text:#A85800; --beak-soft:#FFF3DB;
   --font:ui-rounded,"SF Pro Rounded","Nunito",system-ui,-apple-system,sans-serif;
-  color-scheme:light dark;
+  color-scheme:light;
 }
-@media (prefers-color-scheme:dark){
-  :root{
+
+  :root[data-theme="dark"]{
     --ink:#F2F8EE; --text:#DCE6D7; --muted:#A3B2A8; --page:#13201A; --tint:#1A2A21; --line:#2F4437; --field:#182519; --bubble:#1A2A21;
     --leaf:#58C22C; --leaf-edge:#2E7612; --leaf-soft:#1E3A1A; --on-leaf:#0C1D06;
     --sky:#2A9BE0; --sky-edge:#1A6FA6; --sky-soft:#14324A; --sky-text:#6CC4F5;
     --alarm:#E5483A; --alarm-edge:#A82217; --alarm-soft:#3D1E1A; --alarm-text:#FF8A7E;
     --beak:#FFB020; --beak-text:#FFC75A; --beak-soft:#3A2D12;
   }
-}
+
 *{box-sizing:border-box}
 html,body{background:var(--page)}
 body{margin:0;color:var(--text);font:600 14px/1.5 var(--font);-webkit-font-smoothing:antialiased}
@@ -170,10 +170,12 @@ dialog::backdrop{background:#0b140f99}
 
 /* Take-me-there link on a task: looks like the pressable buttons, opens the source. */
 .task-actions .go{display:inline-flex;align-items:center;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;text-decoration:none;color:#fff;background:var(--sky);border:2px solid var(--sky);border-radius:12px;padding:4px 10px;box-shadow:0 3px 0 var(--sky-edge)}
-@media (prefers-color-scheme:dark){.task-actions .go{color:#08243A}}
+:root[data-theme="dark"] .task-actions .go{color:#08243A}
 
 /* Projects: a filter row and a project chip on each task. */
 .filters{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
 .filters button{font-size:11px;padding:4px 10px;box-shadow:0 3px 0 var(--line);color:var(--muted)}
 .filters button.on{background:var(--sky-soft);border-color:var(--sky);color:var(--sky-text);box-shadow:0 3px 0 var(--sky)}
 .chip.project{color:#3D2400;background:var(--beak)}
+
+:root[data-theme="dark"]{color-scheme:dark}

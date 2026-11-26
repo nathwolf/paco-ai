@@ -13,10 +13,10 @@
   --bubble:#FFFFFF;
   --field:#F7FAF4;
   --font:ui-rounded,"SF Pro Rounded","Nunito",system-ui,-apple-system,sans-serif;
-  color-scheme:light dark;
+  color-scheme:light;
 }
-@media (prefers-color-scheme:dark){
-  :root{
+
+  :root[data-theme="dark"]{
     --ink:#F2F8EE; --text:#DCE6D7; --muted:#A3B2A8; --page:#13201A; --tint:#1A2A21; --line:#2F4437;
     --leaf:#58C22C; --leaf-edge:#2E7612; --leaf-soft:#1E3A1A; --on-leaf:#0C1D06;
     --sky:#2A9BE0; --sky-edge:#1A6FA6; --sky-soft:#14324A; --sky-text:#6CC4F5;
@@ -24,7 +24,7 @@
     --beak:#FFB020; --beak-text:#FFC75A; --beak-soft:#3A2D12;
     --bubble:#1A2A21; --field:#182519;
   }
-}
+
 *{box-sizing:border-box}
 html{background:var(--page)}
 body{margin:0;font:600 14px/1.5 var(--font);color:var(--text);background:var(--page);-webkit-font-smoothing:antialiased}
@@ -135,3 +135,5 @@ fieldset label,.login{display:flex;align-items:center;gap:10px;margin:8px 0}
 #judge-state.problem{padding:7px 11px;border-radius:10px;font-weight:700}
 
 #projects label[for="focus-project"]{display:block;margin-top:22px;padding-top:16px;border-top:2px solid var(--line)}
+
+:root[data-theme="dark"]{color-scheme:dark}

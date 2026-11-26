@@ -175,6 +175,11 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
 }
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
     NSURL *origin=message.frameInfo.request.URL;
+    if([origin.host isEqualToString:@"127.0.0.1"]&&[origin.port isEqual:self.url.port]&&[message.body isKindOfClass:NSString.class]&&[@[@"theme:light",@"theme:dark",@"theme:system"] containsObject:message.body]) {
+        NSString *theme=message.body;
+        self.window.appearance=[theme isEqual:@"theme:system"]?nil:[NSAppearance appearanceNamed:[theme isEqual:@"theme:dark"]?NSAppearanceNameDarkAqua:NSAppearanceNameAqua];
+        return;
+    }
     if([origin.host isEqualToString:@"127.0.0.1"]&&[origin.port isEqual:self.url.port]&&[message.body isEqual:@"focus-changed"]){[self refreshStatus];return;}
     if([origin.host isEqualToString:@"127.0.0.1"]&&[origin.port isEqual:self.url.port]&&[message.body isEqual:@"meeting-start"]){[self startMeeting];return;}
     if([origin.host isEqualToString:@"127.0.0.1"]&&[origin.port isEqual:self.url.port]&&[message.body isEqual:@"meeting-stop"]){[self stopMeeting];return;}
