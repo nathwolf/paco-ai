@@ -157,11 +157,18 @@ class Company(unittest.TestCase):
             challenge=base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
             params={'response_type':'code','client_id':cid,'redirect_uri':'https://client.example/callback','scope':'tasks.read tasks.write','state':'state123','code_challenge':challenge,'code_challenge_method':'S256','resource':base+'/mcp'}
             page=client.get('/authorize?'+urlencode(params));self.assertEqual(page.status_code,200,page.text)
+            self.assertEqual(page.headers['referrer-policy'],'strict-origin')
             csrf=re.search('name="csrf" value="([^"]+)"',page.text)[1]
+            # Simulate real form submissions under the old privacy header, plus
+            # cross-site attempts. The fix must not loosen origin/CSRF checks.
+            for origin in ('null','https://untrusted.example',''):
+                rejected=client.post(page.url,data={'username':'test','password':'safe-test-password','csrf':csrf},headers={'Origin':origin},follow_redirects=False)
+                self.assertEqual(rejected.status_code,403)
             bad=client.post(page.url,data={'username':'test','password':'safe-test-password','csrf':'wrong'},headers={'Origin':base},follow_redirects=False)
             self.assertEqual(bad.status_code,403)
             login=client.post(page.url,data={'username':'test','password':'safe-test-password','csrf':csrf},headers={'Origin':base},follow_redirects=False)
             self.assertEqual(login.status_code,303,login.text)
+            self.assertEqual(login.headers['referrer-policy'],'no-referrer')
             callback=parse_qs(urlsplit(login.headers['location']).query);self.assertEqual(callback['state'],['state123']);code=callback['code'][0]
             token_data={'grant_type':'authorization_code','client_id':cid,'code':code,'redirect_uri':params['redirect_uri'],'code_verifier':verifier,'resource':base+'/mcp'}
             bad=client.post('/token',data=dict(token_data,code_verifier='x'*64));self.assertEqual(bad.status_code,400)
