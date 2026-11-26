@@ -54,6 +54,8 @@ SETTINGS_LOCK = threading.RLock()
 
 
 def initialize(db):
+    import recurring_tasks
+    recurring_tasks.initialize(db)
     import calendar_tasks
     calendar_tasks.initialize(db)
     workspace.initialize(db)
@@ -307,6 +309,8 @@ def worker(path, connect, stop):
             slacking.review(db)
     def reminders():
         with closing(connect(path)) as db:
+            import recurring_tasks
+            recurring_tasks.advance(db)
             flow.sample(db)
             now = time.time()
             meetings.purge(db,now)
@@ -360,6 +364,8 @@ def state(db):
         task['assignee']=owner[0] if owner else ''
         task['parent']=extra['parent'] if extra else None
         task['dependencies']=[r[0] for r in db.execute('SELECT prerequisite FROM dependency WHERE task=?',(task['id'],))]
+        recurrence=db.execute('SELECT zone,weekday,hour,minute,occurrence,enabled FROM task_recurrence WHERE task=?',(task['id'],)).fetchone()
+        task['recurrence']=dict(recurrence) if recurrence else None
     best = planning.next_reminder(db,now)
     config = settings()
     sessions=[]
@@ -367,7 +373,7 @@ def state(db):
         session=dict(row)
         session['events']=[dict(e) for e in db.execute('SELECT at,kind,text FROM agent_event WHERE session=? ORDER BY id DESC LIMIT 30',(row['id'],))]
         sessions.append(session)
-    return {'tasks':tasks,'mode':planning.setting(db,'mode','work'),'wait':planning.reason_to_wait(db,now),'flow':flow.status(db,now),
+    return {'tasks':tasks,'mode':planning.setting(db,'mode','work'),'wait':planning.delivery_status(db,now),'flow':flow.status(db,now),
             'next':dict(best) if best else None,'plan':planning.morning_plan(db,now),
             'preferences':dict(db.execute('SELECT key,value FROM preference')),
             'sync':[dict(r) for r in db.execute('SELECT * FROM sync_status')],

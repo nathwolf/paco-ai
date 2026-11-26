@@ -115,6 +115,7 @@ def refresh_schedule(db,old,new):
     for row in db.execute('''SELECT DISTINCT t.id,t.state,t.due,d.deadline FROM calendar_task_link l
         JOIN task t ON t.id=l.task JOIN details d ON d.task=t.id WHERE l.event=?''',(new['id'],)).fetchall():
         if row['state'] not in ('open','focus','blocked'):continue
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='task_recurrence'").fetchone() and db.execute('SELECT 1 FROM task_recurrence WHERE task=? AND enabled=1',(row['id'],)).fetchone():continue
         # Only move deadlines actually anchored to this occurrence; keep unrelated dates.
         if row['deadline']==old.get('start'):deadline=new['start']
         elif old.get('all_day') and row['deadline']==old.get('end',0)-1:deadline=new['end']-1

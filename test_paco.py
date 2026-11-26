@@ -38,6 +38,8 @@ class ReminderTest(unittest.TestCase):
             self.assertEqual(len(messages), 4)
             command("resume", "1")
             tick(3001)
+            self.assertEqual(len(messages), 4)  # Rolling allowance is temporarily full.
+            tick(10901)  # Morning notifications no longer suppress later work.
             command("done", "1")
             tick(99999)
             self.assertEqual(len(messages), 5)

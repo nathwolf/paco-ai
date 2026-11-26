@@ -93,7 +93,7 @@ Every native notification has **Reply**. The bubble expands only while you talk,
 - “That is done” completes the task in Paco. This does not write completion back to an external tracker.
 - “That is what Juan did” records context and asks whether this task is complete. It does not silently close or reassign it. “Yes he did” answers that follow-up; “Juan completed this” is explicit completion with attribution.
 - “Help me focus for 45 minutes” protects a focus session. “I'm out for 2 hours” and “I'm back” manage temporary quiet time without changing holiday settings.
-- “Bother me less” remembers a slower cadence. “Check in more often” speeds it up within existing quiet periods and daily limits. “What have you learned” explains this feedback; “reset my reminder preferences” resets frequency.
+- “Bother me less” remembers a slower cadence. “Check in more often” speeds it up within existing quiet periods and reminder limits. “What have you learned” explains this feedback; “reset my reminder preferences” resets frequency.
 
 These direct instructions work locally without an API key. Other phrasing and planning questions use your configured model and require **My requests and local tasks** consent for hosted processing. The model sees the current notification/task, recent replies in that conversation, and accepted feedback. Model-interpreted changes are displayed before execution: choose **Apply**, reply “yes”, or cancel. Suggestions expire after ten minutes and reject changed tasks. Failed requests retain your typed reply; retrying does not apply the same instruction twice.
 
@@ -468,3 +468,16 @@ calendar event is not proof that its preparation task was completed.
 Shared calendars provide context, not ownership: seeing Juan's calendar does not assign
 his work to you, and events without your participation do not block your availability.
 The calendar scope in Controls reports the discovered calendar count.
+
+Routine reminders use a rolling allowance of four notifications per three hours,
+rather than an all-day cutoff that can be exhausted in the morning. Critical and
+due-within-a-day tasks can pass that allowance, but still respect quiet hours,
+focus protection, snoozes, the notification gap and per-task limits. Paco's status
+explains whether it is waiting for working hours, protecting flow, or spacing reminders.
+
+Explicit weekly task schedules are stored locally with an IANA timezone. Completing
+an occurrence records its completion and schedules the next week at the same local
+time, including daylight-saving changes. An unfinished occurrence remains pending;
+Paco does not create a pile of weekly duplicates. Explicit schedules take precedence
+over rescheduling of the original calendar evidence. Calendar events themselves are
+not edited. The desktop needs to run for this local recurrence to advance.

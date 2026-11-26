@@ -155,12 +155,26 @@ def next_reminder(db, now):
     if last is not None and now-last < gap:
         return None
     midnight = datetime.fromtimestamp(now).replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
-    daily_total=db.execute("SELECT count(*) FROM intervention WHERE action='notify' AND at>=?",(midnight,)).fetchone()[0]
-    if daily_total>=12:
-        rows=[r for r in rows if r['critical']]
+    # A morning burst must not silence the rest of the day. Use a rolling
+    # allowance; due-today commitments retain their own per-task budget.
+    recent=db.execute("SELECT count(*) FROM intervention WHERE action='notify' AND at>?",(now-3*3600,)).fetchone()[0]
+    if recent>=4:
+        rows=[r for r in rows if r['critical'] or r['deadline'] and r['deadline']<=now+86400]
     budget = 2 if wait else 8
     rows = [r for r in rows if db.execute("SELECT count(*) FROM intervention WHERE task=? AND action='notify' AND at>=?",(r['id'],midnight)).fetchone()[0] < budget]
     return rows[0] if rows else None
+
+
+def delivery_status(db,now):
+    if next_reminder(db,now):return None
+    reason=reason_to_wait(db,now)
+    if reason:return reason
+    if not ranked(db,now).fetchone():return 'No reminders due yet'
+    last=db.execute("SELECT MAX(at) FROM intervention WHERE action='notify'").fetchone()[0]
+    if last and now-last<int(setting(db,'notification_gap','60')):return 'Spacing out reminders'
+    recent=db.execute("SELECT count(*) FROM intervention WHERE action='notify' AND at>?",(now-3*3600,)).fetchone()[0]
+    if recent>=4:return 'Spacing out routine reminders — up to four per three hours'
+    return 'Waiting for the next eligible reminder'
 
 
 def presentation(task, now, spanish=False):
