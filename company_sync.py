@@ -153,7 +153,11 @@ def apply_local(db,kind,local,data):
     db.execute('INSERT OR REPLACE INTO urgency VALUES(?,?)',(local,data['urgent']))
     db.execute('INSERT INTO ownership VALUES(?,?,?) ON CONFLICT(task) DO UPDATE SET owner=excluded.owner',(local,data['assignee'],''))
     db.execute('INSERT OR REPLACE INTO task_extra VALUES(?,?,?,?)',(local,data['description'],lid(data['parent_id']),json.dumps(data['tags'])))
-    db.execute('INSERT OR REPLACE INTO task_project VALUES(?,?,?)',(local,lid(data['project_id'],'project'),'manual'))
+    project = lid(data['project_id'], 'project')
+    previous = db.execute('SELECT project,how FROM task_project WHERE task=?', (local,)).fetchone()
+    # A round trip or an unrelated remote edit must not freeze automatic classification.
+    if (previous and previous['project'] != project) or (not previous and project is not None):
+        db.execute('INSERT OR REPLACE INTO task_project VALUES(?,?,?)', (local,project,'manual'))
     db.execute('INSERT OR REPLACE INTO company_task_fields VALUES(?,?)',(local,data['source_url']))
     db.execute('DELETE FROM dependency WHERE task=?',(local,))
     db.executemany('INSERT INTO dependency VALUES(?,?)',[(local,lid(ref)) for ref in data['dependencies']])

@@ -7,7 +7,8 @@ import paco
 import tagging
 
 
-class Catalog(unittest.TestCase):
+class CatalogFixture:
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = paco.connect(Path(self.tmp.name)/'db')
@@ -26,6 +27,8 @@ class Catalog(unittest.TestCase):
     def project(self, name, hints='', area=''):
         return tagging.save_project(self.db,dict(name=name,hints=hints,area=area))
 
+
+class Catalog(CatalogFixture, unittest.TestCase):
     def test_ambiguous_and_partial_words_are_not_confident_tags(self):
         self.project('Mobile', 'app')
         self.project('Client One', '@client.com')
@@ -119,3 +122,46 @@ class Catalog(unittest.TestCase):
         self.assertIsNone(tagging.of_task(self.db,t))
 
 if __name__=='__main__':unittest.main()
+
+class UserCategories(CatalogFixture, unittest.TestCase):
+    def test_new_category_moves_existing_repository_task(self):
+        task=self.task('Prepare customer invoice','https://github.com/acme/product/issues/10')
+        tagging.retag(self.db)
+        self.assertEqual(tagging.of_task(self.db,task)['name'],'acme/product')
+        project=self.project('Finance','invoice')
+        self.assertEqual(tagging.of_task(self.db,task)['id'],project)
+        tagging.tag(self.db,task,project)
+        self.project('Other finance','invoice')
+        self.assertEqual(tagging.of_task(self.db,task)['id'],project)
+
+    def test_semantic_category_reconsiders_repository_fallback(self):
+        task=self.task('Prepare quarterly numbers','https://github.com/acme/product/issues/11')
+        tagging.retag(self.db)
+        fallback=tagging.of_task(self.db,task)['id']
+        project=self.project('Finance')
+        self.assertEqual(tagging.of_task(self.db,task)['id'],fallback)
+        calls=[]
+        def model(config,system,data,source):
+            calls.append(data)
+            return {'assignments':[{'id':task,'project':'Finance','confidence':'high','reason':'Quarterly financial reporting'}]},{}
+        tagging.retag(self.db,{'provider':'ollama'},model)
+        self.assertEqual(tagging.of_task(self.db,task)['id'],project)
+        self.assertTrue(calls[0]['projects'][0].get('user_created') in (True,False))
+
+    def test_uncertain_semantic_match_keeps_source_bucket(self):
+        task=self.task('Review quarterly numbers','https://github.com/acme/product/issues/12')
+        tagging.retag(self.db);fallback=tagging.of_task(self.db,task)['id']
+        self.project('Finance')
+        def model(*args):
+            return {'assignments':[{'id':task,'project':'Finance','confidence':'medium','reason':'Could be financial or product metrics'}]},{}
+        tagging.retag(self.db,{'provider':'ollama'},model)
+        self.assertEqual(tagging.of_task(self.db,task)['id'],fallback)
+        self.assertEqual(tagging.catalog(self.db,task)['suggested']['name'],'Finance')
+
+    def test_description_matches_and_unchanged_edit_does_not_pin_category(self):
+        import workspace
+        task=workspace.edit_task(self.db,{'changes':{'title':'Send the documents','project':None,'description':'Customer onboarding paperwork'}})['id']
+        project=self.project('Onboarding')
+        self.assertEqual(tagging.of_task(self.db,task)['id'],project)
+        workspace.edit_task(self.db,{'id':task,'changes':{'priority':1,'project':project}})
+        self.assertEqual(tagging.of_task(self.db,task)['how'],'rule')

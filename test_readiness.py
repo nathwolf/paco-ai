@@ -80,7 +80,7 @@ class Links(Base):
 
 
 class Projects(Base):
-    def test_hints_tag_tasks_and_the_banner_says_which_project(self):
+    def test_hints_tag_tasks_and_banner_shows_source_without_project(self):
         a = tagging.save_project(self.db, {'name': 'Client A', 'area': 'Consulting', 'hints': '@clienta.com, github.com/clienta/'})
         tagging.save_project(self.db, {'name': 'Paco', 'area': 'Development', 'hints': 'github.com/me/paco'})
         issue = self.task('Fix export', 'github', 'https://github.com/clienta/portal/issues/4')
@@ -95,7 +95,8 @@ class Projects(Base):
         with self.db:
             self.db.execute("INSERT INTO notification(task,message,mood,reason,created) VALUES(?,?,?,?,?)", (issue, 'Time to start: Fix export', 'friendly', 'x', NOW))
         value = app.banner_payload(self.db, self.db.execute('SELECT * FROM notification').fetchone(), NOW)
-        self.assertIn({'text': 'Client A', 'tone': 'blue'}, value['badges'])
+        self.assertNotIn({'text': 'Client A', 'tone': 'blue'}, value['badges'])
+        self.assertEqual(value['source'], {'id':'github','label':'GitHub'})
 
     def test_model_sorts_the_rest_only_with_permission_and_manual_wins(self):
         tagging.save_project(self.db, {'name': 'Marketing site', 'area': 'Marketing'})

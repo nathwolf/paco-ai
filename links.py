@@ -67,4 +67,50 @@ def for_task(db, task_id):
             return web(row['url'], {'gmail': 'Open email', 'slack': 'Open in Slack', 'mattermost': 'Open in Mattermost'}.get(row['source']))
     if _has(db, 'meeting_item') and db.execute('SELECT 1 FROM meeting_item WHERE task=?', (task_id,)).fetchone():
         return {'url': '/meetings', 'label': 'Open meeting notes'}
+    if _has(db, 'company_task_fields'):
+        row = db.execute('SELECT source_url FROM company_task_fields WHERE task=?', (task_id,)).fetchone()
+        if row:
+            return web(row[0])
     return None
+
+
+SOURCE_LABELS = {'github':'GitHub', 'mattermost':'Mattermost', 'chatgpt':'ChatGPT',
+                 'calendar':'Calendar', 'gmail':'Gmail', 'drive':'Google Drive',
+                 'tasks':'Tasks', 'slack':'Slack', 'meeting':'Meeting notes',
+                 'mail':'Email', 'paco':'Paco', 'cloud':'Connected task'}
+
+
+def source_for_task(db, task_id):
+    """Recognizable origin, without exposing repository names or guessing an MCP client."""
+    def result(source):
+        return {'id': source, 'label': SOURCE_LABELS[source]}
+    if not task_id:
+        return result('paco')
+    aliases = {'apple_calendar':'calendar', 'outlook_calendar':'calendar',
+               'apple_reminders':'tasks', 'google_tasks':'tasks', 'google_drive':'drive',
+               'outlook':'mail', 'chat':'paco'}
+    if _has(db, 'discovered'):
+        row = db.execute('SELECT source FROM discovered WHERE task_id=?', (task_id,)).fetchone()
+        if row:
+            source = row[0].split(':')[0]
+            source = aliases.get(source, source)
+            if source in SOURCE_LABELS:
+                return result(source)
+    if _has(db, 'evidence'):
+        row = db.execute("SELECT source FROM evidence WHERE task=? AND deleted=0 ORDER BY at ASC LIMIT 1", (task_id,)).fetchone()
+        if row:
+            source = aliases.get(row[0], row[0])
+            if source in SOURCE_LABELS:
+                return result(source)
+    if _has(db, 'meeting_item') and db.execute('SELECT 1 FROM meeting_item WHERE task=?', (task_id,)).fetchone():
+        return result('meeting')
+    link = for_task(db, task_id)
+    host = (urlsplit(link['url']).hostname or '').lower() if link else ''
+    for domain, source in [('github.com','github'), ('chatgpt.com','chatgpt'), ('chat.openai.com','chatgpt'),
+                           ('mail.google.com','gmail'), ('drive.google.com','drive'), ('docs.google.com','drive'),
+                           ('calendar.google.com','calendar'), ('tasks.google.com','tasks')]:
+        if host == domain or host.endswith('.' + domain):
+            return result(source)
+    if _has(db, 'company_link') and db.execute("SELECT 1 FROM company_link WHERE kind='task' AND local=?", (task_id,)).fetchone():
+        return result('cloud')
+    return result('paco')

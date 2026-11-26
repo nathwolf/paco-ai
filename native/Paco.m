@@ -380,11 +380,20 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     NSImageView *image=[[NSImageView alloc] initWithFrame:NSMakeRect(12,height-14-84,84,84)];image.image=[self imageFor:mood];image.imageScaling=NSImageScaleProportionallyUpOrDown;[image setAccessibilityLabel:self.expressions[mood][@"label"]?:@"Paco"];[content addSubview:image];
 
     // Status chips: the first is filled, the rest are bold coloured text. Chips that do not fit are left out.
-    CGFloat x=108;
-    for(NSUInteger i=0;i<badges.count&&i<3;i++){
+    NSDictionary *source=[value[@"source"] isKindOfClass:NSDictionary.class]?value[@"source"]:@{};
+    NSString *sourceID=source[@"id"];
+    NSArray *sourceIDs=@[@"github",@"mattermost",@"chatgpt",@"calendar",@"gmail",@"drive",@"tasks",@"slack",@"meeting",@"mail",@"paco",@"cloud"];
+    if(![sourceIDs containsObject:sourceID?:@""])sourceID=@"paco";
+    NSString *sourcePath=[[[self.assets stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"sources"] stringByAppendingPathComponent:[sourceID stringByAppendingPathExtension:@"png"]];
+    NSImage *sourceImage=[[NSImage alloc] initWithContentsOfFile:sourcePath];sourceImage.template=YES;
+    NSImageView *sourceView=[[NSImageView alloc] initWithFrame:NSMakeRect(108,height-16-16,16,16)];
+    sourceView.image=sourceImage;sourceView.contentTintColor=color(0x667069);sourceView.imageScaling=NSImageScaleProportionallyUpOrDown;
+    sourceView.toolTip=[source[@"label"] isKindOfClass:NSString.class]?source[@"label"]:@"Paco";[sourceView setAccessibilityLabel:sourceView.toolTip];[content addSubview:sourceView];
+    CGFloat x=132;
+    for(NSUInteger i=0;i<badges.count&&i<2;i++){
         NSDictionary *badge=badges[i];if(![badge isKindOfClass:NSDictionary.class]||![badge[@"text"] isKindOfClass:NSString.class])continue;
         NSString *chipTone=[badge[@"tone"] isKindOfClass:NSString.class]?badge[@"tone"]:@"gray";
-        NSTextField *label=[NSTextField labelWithString:badge[@"text"]];label.font=rounded(i==0?11:12,i==0?NSFontWeightHeavy:NSFontWeightBold);[label sizeToFit];
+        NSTextField *label=[NSTextField labelWithString:badge[@"text"]];label.font=rounded(10,NSFontWeightSemibold);[label sizeToFit];
         CGFloat width=i==0?NSWidth(label.frame)+18:NSWidth(label.frame);
         if(x+width>322)break;
         if(i==0){
@@ -399,15 +408,15 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     }
     NSButton *close=[NSButton buttonWithTitle:@"×" target:self action:@selector(dismiss)];close.bordered=NO;close.frame=NSMakeRect(330,height-10-22,22,22);close.font=rounded(20,NSFontWeightBold);close.contentTintColor=color(0x8A968D);[close setAccessibilityLabel:[self word:@"dismiss" fallback:@"Dismiss notification"]];[content addSubview:close];
 
-    // Task title, bold and dark; the nudge sits directly under it in the severity colour.
+    // Smaller task text gets four lines; keep contextual nudges on non-task notices.
     NSString *titleText=[value[@"title"] isKindOfClass:NSString.class]?value[@"title"]:(value[@"message"]?:@"");
-    NSTextField *title=[NSTextField wrappingLabelWithString:titleText];title.font=rounded(15,NSFontWeightHeavy);title.textColor=color(0x1F3326);title.maximumNumberOfLines=2;title.lineBreakMode=NSLineBreakByWordWrapping;title.cell.truncatesLastVisibleLine=YES;title.toolTip=titleText;
-    CGFloat titleHeight=MIN(40,ceil([title.cell cellSizeForBounds:NSMakeRect(0,0,242,1000)].height));
-    title.frame=NSMakeRect(108,height-40-titleHeight,242,titleHeight);[content addSubview:title];
+    NSTextField *title=[NSTextField wrappingLabelWithString:titleText];title.font=rounded(12.5,NSFontWeightSemibold);title.textColor=color(0x1F3326);title.maximumNumberOfLines=value[@"task"]!=nil&&value[@"task"]!=NSNull.null?4:3;title.lineBreakMode=NSLineBreakByWordWrapping;title.cell.truncatesLastVisibleLine=YES;title.toolTip=titleText;
+    CGFloat titleHeight=MIN(value[@"task"]!=nil&&value[@"task"]!=NSNull.null?62:46,ceil([title.cell cellSizeForBounds:NSMakeRect(0,0,242,1000)].height));
+    title.frame=NSMakeRect(108,height-38-titleHeight,242,titleHeight);[content addSubview:title];
     NSString *nudgeText=[value[@"nudge"] isKindOfClass:NSString.class]?value[@"nudge"]:@"";
-    if(nudgeText.length){
-        NSTextField *nudge=[NSTextField labelWithString:nudgeText];nudge.font=rounded(12,NSFontWeightBold);nudge.textColor=color(toneText(tone));nudge.lineBreakMode=NSLineBreakByTruncatingTail;
-        nudge.frame=NSMakeRect(108,height-(40+titleHeight+3)-16,242,16);[content addSubview:nudge];
+    if(nudgeText.length&&(!value[@"task"]||value[@"task"]==NSNull.null)){
+        NSTextField *nudge=[NSTextField labelWithString:nudgeText];nudge.font=rounded(10.5,NSFontWeightMedium);nudge.textColor=color(toneText(tone));nudge.lineBreakMode=NSLineBreakByTruncatingTail;
+        nudge.frame=NSMakeRect(108,height-(38+titleHeight+3)-16,242,16);[content addSubview:nudge];
     }
 
     self.task=[value[@"task"] isKindOfClass:NSNumber.class]?value[@"task"]:nil;

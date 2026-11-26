@@ -114,10 +114,7 @@ def banner_payload(db, row, now=None):
         value['mood'] = 'friendly'
         value['badges'] = [{'text':(f'Empieza en {minutes} min' if spanish else f'Starts in {minutes} min') if minutes else ('Empieza ya' if spanish else 'Starting now'),'tone':'blue'}]
         value['nudge'] = 'Prepárate y entra a tiempo.' if spanish else 'Get ready and join on time.'
-    project = tagging.of_task(db, value['task']) if value.get('task') else None
-    if project and value.get('badges'):
-        value['badges'] = (value['badges'][:1]+[{'text':project['name'],'tone':'blue'}]+value['badges'][1:])[:3]
-        value['project'] = project['name']
+    value['source'] = links.source_for_task(db, value.get('task'))
     link = links.for_task(db, value.get('task'))
     if not link and value.get('reason') in ('Meeting notes ready',):
         link = {'url':'/meetings','label':'Open meeting notes'}
@@ -232,6 +229,9 @@ def worker(path, connect, stop):
         # Individual source errors are recorded in sync_status by discovery.sync.
         with closing(connect(path)) as db:
             discovery.sync(db)
+    def catalog_tasks():
+        # Independent from slow network sync; new categories are considered promptly.
+        with closing(connect(path)) as db:
             tagging.retag(db,settings().get('model'))
     def capture():
         import capture_context
@@ -285,7 +285,7 @@ def worker(path, connect, stop):
             if db.execute("SELECT 1 FROM waiting WHERE status='waiting' AND due<=?",(now,)).fetchone():
                 workflows.run_automations(db,now,event='missing_reply')
     gate = lambda: presence.active()
-    for name,interval,step in (('Mattermost chat',15,mattermost_chat),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
+    for name,interval,step in (('task catalog',20,catalog_tasks),('Mattermost chat',15,mattermost_chat),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
         threading.Thread(target=run_loop,args=(name,stop,interval,step,report,gate),daemon=True).start()
     try:
         run_loop('reminders',stop,TICK_INTERVAL,reminders,report,gate)

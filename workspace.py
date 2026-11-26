@@ -53,7 +53,8 @@ def edit_task(db, data, commit=True):
             old=db.execute('SELECT * FROM task_extra WHERE task=?',(ident,)).fetchone()
             db.execute('INSERT OR REPLACE INTO task_extra VALUES(?,?,?,?)',(ident,fields.get('description',old['description'] if old else ''),old['parent'] if old else None,json.dumps(fields['tags']) if 'tags' in fields else old['tags'] if old else '[]'))
         if 'assignee' in fields:db.execute("INSERT INTO ownership VALUES(?,?,'') ON CONFLICT(task) DO UPDATE SET owner=excluded.owner",(ident,fields['assignee']))
-        if 'project' in changes:
+        previous_project = db.execute('SELECT project FROM task_project WHERE task=?', (ident,)).fetchone()
+        if 'project' in changes and ((previous_project and previous_project['project'] != project) or (not previous_project and project is not None)):
             db.execute("INSERT OR REPLACE INTO task_project VALUES(?,?,'manual')",(ident,project))
             db.execute('DELETE FROM task_catalog WHERE task=?',(ident,))
     return {'ok':True,'id':ident}
