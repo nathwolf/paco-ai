@@ -252,6 +252,13 @@ def worker(path, connect, stop):
     def sync_company():
         with closing(connect(path)) as db:
             company_sync.sync(db)
+    def mattermost_chat():
+        import mattermost_bot
+        config=settings()
+        connection=config.get('connectors',{}).get('mattermost')
+        if connection:
+            with closing(connect(path)) as db:
+                mattermost_bot.poll(db,connection,config.get('model'))
     def call_outs():
         # Separate loop: a model judging your activity can take seconds and must not delay reminders.
         with closing(connect(path)) as db:
@@ -278,7 +285,7 @@ def worker(path, connect, stop):
             if db.execute("SELECT 1 FROM waiting WHERE status='waiting' AND due<=?",(now,)).fetchone():
                 workflows.run_automations(db,now,event='missing_reply')
     gate = lambda: presence.active()
-    for name,interval,step in (('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
+    for name,interval,step in (('Mattermost chat',15,mattermost_chat),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
         threading.Thread(target=run_loop,args=(name,stop,interval,step,report,gate),daemon=True).start()
     try:
         run_loop('reminders',stop,TICK_INTERVAL,reminders,report,gate)
@@ -328,6 +335,7 @@ def state(db):
             'calendar':[dict(r) for r in db.execute('SELECT * FROM calendar_event ORDER BY start')],
             'conflicts':calendar_planning.conflicts(db),
             'connector_accounts':config.get('connectors',{}),
+            'mattermost_proposals':[dict(r) for r in db.execute("SELECT p.id,p.task,t.title,p.changes FROM mattermost_proposal p JOIN task t ON t.id=p.task WHERE p.status='pending' ORDER BY p.id DESC LIMIT 20")],
             'capture_rules':[dict(r) for r in db.execute('SELECT * FROM capture_rule')],
             'exclusions':[dict(r) for r in db.execute('SELECT * FROM exclusion')],
             'review':planning.review(db,now),
@@ -732,6 +740,8 @@ def act(db,path,connect,data):
         if connection:
             import keyring
             keyring.delete_password('paco.connector',data['provider']+'/'+connection['account'])
+            if data['provider']=='mattermost' and keyring.get_password('paco.mattermost.bot',connection['account']):
+                keyring.delete_password('paco.mattermost.bot',connection['account'])
         return {'ok':True}
     if action=='capture_rule':
         name=data['app'].strip()

@@ -1,4 +1,5 @@
 """Local workspace editing and focus sessions. No activity history is retained here."""
+from contextlib import nullcontext
 import json
 import time
 from task_contract import clean_task
@@ -29,7 +30,7 @@ def start(db, data, now):
     return {'id':ident}
 
 
-def edit_task(db, data):
+def edit_task(db, data, commit=True):
     ident=int(data['id']) if data.get('id') is not None else None;changes=data.get('changes',{})
     allowed={'title','description','tags','priority','urgent','deadline','estimate_minutes','assignee','project'}
     if not isinstance(changes,dict) or set(changes)-allowed:raise ValueError('Unsupported task edit')
@@ -37,7 +38,7 @@ def edit_task(db, data):
     if ident is None and not fields.get('title'):raise ValueError('A task needs a title')
     project=changes.get('project')
     if project is not None and (type(project) is not int or not db.execute('SELECT 1 FROM project WHERE id=?',(project,)).fetchone()):raise ValueError('Unknown project')
-    with db:
+    with (db if commit else nullcontext()):
         if ident is None:
             ident=db.execute("INSERT INTO task(title,priority,state,due) VALUES(?,?,'open',?)",(fields['title'],fields.get('priority',3),time.time())).lastrowid
         if not db.execute('SELECT 1 FROM task WHERE id=?',(ident,)).fetchone():raise ValueError('Unknown task')

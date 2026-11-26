@@ -41,6 +41,7 @@ async function refresh(){const [r,c]=await Promise.all([fetch('/api/state'),fetc
  const accounts=Object.entries(s.connector_accounts||{});
  $('#accounts').replaceChildren(...accounts.map(([provider,account])=>{const row=node('div',undefined,'source');const label=node('span',NAMES[provider]||provider);label.append(node('small','Account '+(account.username||account.account)));
   const st=status[provider];shown.add(provider);if(st){const d=describe(st);label.append(node('small',d.text,'state'+(d.problem?' problem':'')));}
+  if(provider==='mattermost'&&account.bot?.enabled){const chat=node('a','Message Paco ↗');chat.href=account.bot.url;chat.target='_blank';chat.rel='noopener';label.append(chat,node('small','Replies while this Mac is awake and unlocked. Checks about every 15 seconds.'));const pending=s.mattermost_proposals||[];if(pending.length)label.append(node('small',pending.length+' suggested task updates to review. Ask Paco “show pending changes” in your DM.'));}
   const off=node('button','Disconnect');off.className='quiet';off.onclick=async()=>{if(!confirm('Disconnect '+(NAMES[provider]||provider)+'? Its token is removed from Keychain.'))return;off.disabled=true;try{await act({action:'connector_revoke',provider});saved('Disconnected');await refresh();}catch(e){notice(e.message);off.disabled=false;}};
   row.append(label,off);return row;}));
  // Everything else (Google sources, background loops) as a compact list.

@@ -70,6 +70,8 @@ def initialize(db):
     import intake, company_sync
     intake.initialize(db)
     company_sync.initialize(db)
+    import mattermost_tasks
+    mattermost_tasks.initialize(db)
 
 
 def tick(db, now, deliver):

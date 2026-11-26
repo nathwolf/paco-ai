@@ -69,6 +69,12 @@ def forget(db, source, key):
         if source == 'mattermost':
             # Forget the whole message, including any task citations derived from it.
             base = '/'.join(key.split('/')[:3])
+            tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if 'mattermost_proposal' in tables:
+                db.execute("DELETE FROM mattermost_proposal WHERE source_key=? OR substr(source_key,1,?)=?",(base,len(base)+1,base+'/'))
+            if 'mattermost_dm' in tables and len(base.split('/'))==3:
+                account,message=base.rsplit('/',1)
+                db.execute("UPDATE mattermost_dm SET text='',answer='',state='forgotten' WHERE account=? AND post=?",(account,message))
             related = [r[0] for r in db.execute("SELECT source_key FROM evidence WHERE source=? AND (source_key=? OR substr(source_key,1,?)=?)", (source,base,len(base)+1,base+'/'))]
             for item in set(related+[base,key]):
                 db.execute("INSERT OR IGNORE INTO tombstone VALUES(?,?)", (source,hashlib.sha256(item.encode()).hexdigest()))

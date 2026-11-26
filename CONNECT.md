@@ -34,9 +34,27 @@ Create a confidential OAuth application in your Mattermost team's **Integrations
 .venv/bin/python -m mattermost --base https://YOUR-MATTERMOST-SERVER
 ```
 
-Enter the client ID and hidden client secret when prompted, then open the printed localhost link in your work browser profile. The loopback flow verifies state and uses PKCE. Credentials, including refresh tokens, stay in macOS Keychain; account settings contain no secrets. Mattermost grants broader account permissions than read-only. Paco's connector implements only a fixed list of read endpoints and cannot post messages. Authorize only if you accept that provider-level grant.
+Enter the client ID and hidden client secret when prompted, then open the printed localhost link in your work browser profile. The loopback flow verifies state and uses PKCE. Credentials, including refresh tokens, stay in macOS Keychain; account settings contain no secrets. Mattermost grants broader account permissions than read-only. Paco's account connector implements only a fixed list of read endpoints. Replies use a separate member bot restricted to your private DM. Authorize only if you accept that provider-level grant.
 
 In **Controls → Model → Allow this model to read**, enable **Mattermost direct messages and mentions** to allow your selected hosted model (including Codex CLI) to extract tasks. Without this permission, context is stored locally but is not analyzed by a hosted model. Message context stays in the local database; only structured tasks sync to the company service. **Disconnect** removes Paco's local account token; revoke the OAuth app in Mattermost as well to invalidate the server-side grant.
+
+### Talk to Paco and update tasks
+
+Create a member bot (username `paco`) in **Integrations → Bot Accounts** and create its access token in that signed-in administrator session. Mattermost deliberately forbids OAuth applications from creating personal/bot access tokens; do not enable server-wide personal access tokens to work around that restriction. The setup command can create the bot if permitted, then asks for its token with a hidden prompt:
+
+```sh
+.venv/bin/python -m mattermost_bot --setup
+```
+
+The command verifies the token belongs to that bot, stores it in macOS Keychain, adds the bot to your team, and binds its private DM to your connected Mattermost user ID. The bot has Member permissions; it is not an administrator. Paco's runtime rejects other recipients, public/group channels, bot-authored commands and other users' requests. **Controls → Sources → Mattermost → Message Paco** opens the DM.
+
+Examples: “Add a task to review the proposal”, “Juan will handle that; keep it open”, “Remind me in five hours”, “That is done”, and “What should I focus on?” It uses the conversation to resolve references, asks when ambiguous, and confirms only committed changes. Each reply and change has a durable receipt so restarting does not replay it. If delivery is uncertain, Paco checks for its receipt instead of blindly sending again. Send a new message to correct a command; editing a processed message does not undo or rerun it.
+
+Private DMs are checked approximately every 15 seconds while Paco is running and the Mac is awake/unlocked. Messages sent while the Mac is unavailable wait until it returns. Background conversation discovery remains on the five-minute cycle. Neither path uses a model without the Mattermost processing permission.
+
+For existing tasks, new statements from you can update status, priority, deadlines, reminder times, assignment, and task details. Passive discovery only updates tasks already associated with that conversation/channel; a direct DM with Paco can explicitly reference any of your local tasks. Older messages cannot overwrite later edits, and a task changed during interpretation is checked again before saving. Changes reported by someone else become pending proposals. Ask Paco “show pending changes” and confirm the proposal you want applied. Controls shows the pending count. Assignment to Juan is a task label, not delivery to Juan's Paco account.
+
+Only task fields sync to the company service. Raw source messages and bot processing history stay on the Mac (selected context is sent to your approved model). Disconnect removes both local credentials; revoke the OAuth grant and bot token in Mattermost to invalidate them at the provider.
 
 ## Other sources
 
