@@ -57,6 +57,17 @@ class HTTP(unittest.TestCase):
             db.execute("INSERT INTO notification(task,message,mood,reason,created) VALUES(1,'hello','friendly','ready',?)",(time.time()-1,))
         json.load(self.request('/api/action',{'action':'snooze','id':1}))
         self.assertIsNone(json.load(self.request('/api/banner')))
+    def test_mac_focus_blocks_queued_preview_and_companion_then_resumes(self):
+        import time,mac_focus
+        with paco.connect(self.path) as db:
+            db.execute("INSERT INTO notification(task,message,mood,reason,created) VALUES(NULL,'Focus test','friendly','Notification preview',?)",(time.time(),))
+            mac_focus.observe(db,True)
+        self.assertTrue(json.load(self.request('/api/companion'))['quiet_focus'])
+        self.assertIsNone(json.load(self.request('/api/banner')))
+        self.assertEqual(json.load(self.request())['wait'],mac_focus.REASON)
+        with paco.connect(self.path) as db:mac_focus.observe(db,False)
+        self.assertFalse(json.load(self.request('/api/companion'))['quiet_focus'])
+        self.assertEqual(json.load(self.request('/api/banner'))['message'],'Focus test')
     def test_session_suppresses_queued_urgent_alert_and_survives_state_refresh(self):
         import time
         with paco.connect(self.path) as db:

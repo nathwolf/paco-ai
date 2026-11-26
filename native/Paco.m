@@ -321,7 +321,7 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
 - (void)poll {
     NSDictionary *session=CFBridgingRelease(CGSessionCopyCurrentDictionary());
     if(self.resting||[session[@"CGSSessionScreenIsLocked"] boolValue]||(session[(__bridge NSString *)kCGSessionOnConsoleKey]&&![session[(__bridge NSString *)kCGSessionOnConsoleKey] boolValue])){[self.banner orderOut:nil];return;}
-    if(++self.ticks%5==0)[self refreshStatus];
+    if(++self.ticks%2==0)[self refreshStatus];
     if(self.quietFocus){[self.banner orderOut:nil];return;}
     if(self.banner)[self.banner orderFrontRegardless];
     if(self.polling||self.banner)return;self.polling=YES;
@@ -333,6 +333,7 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     }] resume];
 }
 - (void)present:(NSDictionary *)value {
+    if(self.quietFocus)return;
     if(self.replying)return;
     self.currentAlert=value;self.composing=NO;self.pendingReply=nil;self.replyRequest=nil;self.replyText=nil;
     [self renderAlert];

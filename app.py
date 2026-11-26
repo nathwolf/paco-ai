@@ -32,6 +32,7 @@ import project_tracking
 import project_brains
 import attention
 import presence
+import mac_focus
 import intake
 import company_sync
 import workspace
@@ -289,6 +290,9 @@ def worker(path, connect, stop):
     def sample_flow():
         with closing(connect(path)) as db:
             flow.sample(db)
+    def sample_mac_focus():
+        with closing(connect(path)) as db:
+            mac_focus.sample(db)
     def sync_company():
         with closing(connect(path)) as db:
             attention.configure(db,settings())
@@ -336,7 +340,8 @@ def worker(path, connect, stop):
     current_mattermost=lambda:settings().get('connectors',{}).get('mattermost')
     threading.Thread(target=mattermost_events.listen,args=(stop,chat_wake,current_mattermost,gate,report),daemon=True).start()
     threading.Thread(target=run_loop,args=('Mattermost chat',stop,30,mattermost_chat,report,gate,chat_wake),daemon=True).start()
-    for name,interval,step in (('task relationships',300,reconcile_obligations),('responsibility learning',60,admit_responsibilities),('calendar actions',60,calendar_actions),('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
+    sample_mac_focus()
+    for name,interval,step in (('macOS Focus',10,sample_mac_focus),('task relationships',300,reconcile_obligations),('responsibility learning',60,admit_responsibilities),('calendar actions',60,calendar_actions),('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
         threading.Thread(target=run_loop,args=(name,stop,interval,step,report,gate),daemon=True).start()
     try:
         run_loop('reminders',stop,TICK_INTERVAL,reminders,report,gate)
@@ -374,7 +379,7 @@ def state(db):
         session['events']=[dict(e) for e in db.execute('SELECT at,kind,text FROM agent_event WHERE session=? ORDER BY id DESC LIMIT 30',(row['id'],))]
         sessions.append(session)
     return {'tasks':tasks,'mode':planning.setting(db,'mode','work'),'wait':planning.delivery_status(db,now),'flow':flow.status(db,now),
-            'next':dict(best) if best else None,'plan':planning.morning_plan(db,now),
+            'next':dict(best) if best else None,'plan':planning.morning_plan(db,now),'mac_focus':mac_focus.status(db,now),
             'preferences':dict(db.execute('SELECT key,value FROM preference')),
             'sync':[dict(r) for r in db.execute('SELECT * FROM sync_status')],
             'mail_coverage':mail_reasoning.coverage(db),
@@ -908,13 +913,13 @@ def make_server(path,connect,port=0):
                         'mode':planning.setting(db,'mode','work'),'mood':mood,'autostart':startup.enabled(),
                         'expressions':EXPRESSIONS,'flow':flow.status(db),'meeting':meeting_audio.active(path),
                         'projects':[{'id':p['id'],'name':p['name'],'area':p['area']} for p in tagging.projects(db)],
-                        'focus':tagging.focus(db,time.time()),'quiet_focus':bool(workspace.active(db))})
+                        'focus':tagging.focus(db,time.time()),'quiet_focus':bool(workspace.active(db)) or mac_focus.active(db),'mac_focus':mac_focus.status(db)})
             if parsed.path=='/api/banner':
                 if not presence.active():
                     return self.respond(None)
                 with closing(connect(path)) as db:
                     # Recheck immediately before delivery, including already queued alerts.
-                    if workspace.active(db):return self.respond(None)
+                    if workspace.active(db) or mac_focus.active(db):return self.respond(None)
                     flow.sample(db)
                     now = time.time()
                     for row in db.execute('SELECT * FROM notification WHERE shown IS NULL AND created>? ORDER BY id',(now-300,)):

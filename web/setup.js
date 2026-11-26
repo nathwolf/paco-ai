@@ -27,7 +27,7 @@ function describe(x){
 async function act(data){const r=await fetch('/api/action',{method:'POST',headers:{'Content-Type':'application/json','X-Paco':'1'},body:JSON.stringify(data)});const result=await r.json();if(!r.ok)throw Error(result.error||'Could not save');return result;}
 function form(id,fn){$(id).onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button:not([type=button])');button.disabled=true;try{await fn(e.target);saved('Saved');await refresh();}catch(e){notice(e.message);}finally{button.disabled=false;}};}
 async function refresh(){const [r,c]=await Promise.all([fetch('/api/state'),fetch('/api/companion')]);if(!r.ok||!c.ok)throw Error('Paco is unavailable. Reopen the launcher.');const s=await r.json(),companion=await c.json();renderCompany(s);
- $('#flow-status').textContent=s.flow.message;$('#judge-state').textContent=s.callout.judge_state;$('#judge-state').classList.toggle('problem',s.callout.judge&&!s.callout.judge_ready);
+ $('#flow-status').textContent=[s.mac_focus?.message,s.flow.message].filter(Boolean).join(' · ');$('#judge-state').textContent=s.callout.judge_state;$('#judge-state').classList.toggle('problem',s.callout.judge&&!s.callout.judge_ready);
  $('#model-status').textContent=s.model?'Connected: '+(PROVIDERS[s.model.provider]||s.model.provider)+(s.model.model?' · '+s.model.model:''):'Not connected yet';
  const connected=new Set(s.sources);const status=Object.fromEntries(s.sync.map(x=>[x.source,x]));const shown=new Set();
  for(const [row,keys] of Object.entries(ROWS)){

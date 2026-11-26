@@ -4,6 +4,8 @@ import flow
 
 
 def initialize(db):
+    import mac_focus
+    mac_focus.initialize(db)
     db.executescript("""
         CREATE TABLE IF NOT EXISTS preference(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS intervention(task INTEGER, action TEXT, at REAL);
@@ -32,6 +34,8 @@ def setting(db, key, default=""):
 
 
 def reason_to_wait(db, now):
+    import mac_focus
+    if mac_focus.active(db,now):return mac_focus.REASON
     import workspace
     if workspace.active(db,now):return 'Focus session in progress'
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='meeting_note'").fetchone() and db.execute("SELECT 1 FROM meeting_note WHERE state IN ('recording','paused','finishing')").fetchone():
@@ -133,7 +137,7 @@ def next_reminder(db, now):
     import workspace
     if workspace.active(db,now):return None
     wait = reason_to_wait(db, now)
-    if wait in ("Notifications paused", "Temporarily away", "Meeting in progress"):
+    if wait in ("Notifications paused", "Temporarily away", "Meeting in progress", "macOS Focus is on"):
         return None
     meeting = meeting_due(db, now)
     if meeting and not time_off(db, now):
