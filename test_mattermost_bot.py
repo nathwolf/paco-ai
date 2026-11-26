@@ -108,6 +108,10 @@ class BotTest(unittest.TestCase):
             with self.assertRaises(ValueError):c.request('POST','/posts',{'channel_id':'public','message':'x'})
             with self.assertRaises(ValueError):c.request('GET','/users/stranger')
             secret.assert_not_called()
+        with patch.object(c,'request',return_value={'id':'sent'}) as send:
+            c.send('Hello','receipt','incoming-thread')
+            self.assertEqual(send.call_args.args[2]['channel_id'],'dm')
+            self.assertEqual(send.call_args.args[2]['root_id'],'')
     def test_passive_owner_update_other_person_proposal_and_approval(self):
         original=row();original['messages'][0]['version']=NOW*1000
         add=Mock(return_value={'actions':[dict(title='Review draft',message='a',quote='review the draft')]})

@@ -70,7 +70,7 @@ class Client:
 
     def send(self, message, marker, root=''):
         return self.request('POST','/posts',dict(channel_id=self.bot['channel_id'],message=message,
-            root_id=root,props={'paco_receipt':marker}))
+            root_id='',props={'paco_receipt':marker}))
 
 
 def initialize(db):

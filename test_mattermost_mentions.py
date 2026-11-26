@@ -26,8 +26,8 @@ class Client:
         return copy.deepcopy([t for t in self.posts if t['channel_id']==channel and (t.get('root_id') or t['id'])==root])
     def human(self,ident):return ident not in self.bots
     def send(self,channel,p,text,marker):
-        self.sent.append((channel,p.get('root_id') or p['id'],text))
-        response=post('reply'+str(len(self.sent)),text,'bot',channel,p.get('root_id') or p['id'],NOW+1)
+        self.sent.append((channel,'',text))
+        response=post('reply'+str(len(self.sent)),text,'bot',channel,'',NOW+1)
         response['props']['paco_receipt']=marker;self.posts.append(response)
         if self.fail:raise TimeoutError('Ambiguous send')
         return response
@@ -42,14 +42,14 @@ class Mentions(unittest.TestCase):
             self.assertTrue(mentions.mentioned(s))
         for s in ['@pacote','x@paco','https://example/@paco','`@paco hello`','> @paco hello','```\n@paco hi\n```','hi there']:
             self.assertFalse(mentions.mentioned(s),s)
-    def test_replies_in_original_thread_and_deduplicates_polling(self):
+    def test_thread_mentions_reply_in_channel_and_deduplicate_polling(self):
         client=Client([post('root','Planning'),post('a','@paco summarize','juan',root='root')])
         predict=Mock(return_value={'answer':'Here is the plan.','actions':[]})
         self.poll(client,predict);self.poll(client,predict)
-        self.assertEqual(client.sent,[('group','root','Here is the plan.')]);predict.assert_called_once()
-    def test_new_top_level_mention_gets_a_thread_reply(self):
+        self.assertEqual(client.sent,[('group','','Here is the plan.')]);predict.assert_called_once()
+    def test_new_top_level_mention_gets_a_normal_chat_message(self):
         client=Client([post()]);self.poll(client,lambda p:{'answer':'Hola!'})
-        self.assertEqual(client.sent[0][:2],('group','a'))
+        self.assertEqual(client.sent[0][:2],('group',''))
     def test_model_cannot_see_private_tasks_dm_history_or_other_threads(self):
         workspace.edit_task(self.db,{'changes':{'title':'PRIVATE_TASK_SENTINEL','description':'PRIVATE_DESCRIPTION'}})
         mattermost_bot.initialize(self.db)
@@ -124,15 +124,17 @@ class Mentions(unittest.TestCase):
         original=fake.post
         fake.post=lambda c,i:removed if i=='deleted' else original(c,i)
         self.poll(fake,lambda _:{'answer':'Hello'})
-        self.assertEqual(len(fake.sent),1);self.assertEqual(fake.sent[0][1],'next')
+        self.assertEqual(len(fake.sent),1);self.assertEqual(fake.sent[0][2],'Hello')
 
     def test_real_send_rechecks_membership_and_target_before_post(self):
         client=mentions.Client(CFG);client.channels={'group':dict(id='group')}
         with patch.object(client,'discover',return_value=[]),patch.object(client,'_request') as request:
             with self.assertRaises(ValueError):client.send('group',post(),'hello','key')
             request.assert_not_called()
-        with patch.object(client,'discover',return_value=[dict(id='group')]),patch.object(client,'post',return_value=post()),patch.object(client,'_request',return_value={'id':'reply'}) as request:
-            client.send('group',post(),'hello','key')
-            self.assertEqual(request.call_args.args[2]['channel_id'],'group');self.assertEqual(request.call_args.args[2]['root_id'],'a')
+        for root in ('','existing-thread'):
+            incoming=post(root=root)
+            with patch.object(client,'discover',return_value=[dict(id='group')]),patch.object(client,'post',return_value=incoming),patch.object(client,'_request',return_value={'id':'reply'}) as request:
+                client.send('group',incoming,'hello','key')
+                self.assertEqual(request.call_args.args[2]['channel_id'],'group');self.assertEqual(request.call_args.args[2]['root_id'],'')
 
 if __name__=='__main__':unittest.main()

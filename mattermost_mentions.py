@@ -55,7 +55,7 @@ def marker(account,channel,post):
 
 
 class Client:
-    """Bot-only writes to a verified shared channel and the triggering post's thread."""
+    """Bot-only writes to a verified shared channel after checking the triggering post."""
     def __init__(self,config):
         self.config=config;self.bot=config['bot'];self.base=mattermost.origin(config['base'])
         self.channels={};self.posts={};self.users={}
@@ -123,7 +123,7 @@ class Client:
         if not any(c['id']==channel for c in self.discover()):raise ValueError('Shared conversation membership changed')
         live=self.post(channel,post['id'])
         if not eligible(live,self.config) or version(live)!=version(post):raise ValueError('Mention changed before delivery')
-        return self._request('POST','/posts',dict(channel_id=channel,root_id=live.get('root_id') or live['id'],
+        return self._request('POST','/posts',dict(channel_id=channel,root_id='',
             message=answer,props={'paco_receipt':receipt,'from_bot':'true'}))
 
 

@@ -360,7 +360,8 @@ Paco refreshes project facts and uses the briefs in task extraction, classificat
 
 Add **@paco** as a member of the group or channel, then mention him explicitly, for
 example `@paco resume este hilo y separa las responsabilidades de cada persona`.
-Paco replies in that same thread. Mention him again for follow-ups; ordinary messages,
+Paco sends a normal message in that chat, rather than nesting his reply in a thread.
+Mention him again for follow-ups; ordinary messages,
 quoted mentions and other bots do not trigger replies. Both Paco and the connected
 owner must belong to the conversation. Paco does not automatically join channels.
 
