@@ -518,7 +518,7 @@ def act(db,path,connect,data):
         return {'ok':True}
     if action=='model':
         allowed = data.get('allowed_sources',[])
-        if not isinstance(allowed,list) or set(allowed)-{'gmail','chat','meeting','desktop','activity'}:
+        if not isinstance(allowed,list) or set(allowed)-{'gmail','mattermost','chat','meeting','desktop','activity'}:
             raise ValueError('Unknown source consent')
         config = settings()
         # Consents the form does not show (desktop text) are kept rather than silently dropped.

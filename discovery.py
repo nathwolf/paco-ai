@@ -303,6 +303,11 @@ def sync(db):
                 success()
                 continue
             if source in config.get('connectors',{}):
+                if source=='mattermost':
+                    import mattermost
+                    mattermost.sync(db,config['connectors'][source],config.get('model'),now)
+                    success()
+                    continue
                 import connectors
                 import workflows
                 connection = config['connectors'][source]

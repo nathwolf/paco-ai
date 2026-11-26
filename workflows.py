@@ -66,6 +66,14 @@ def flush_deleted(db):
 
 def forget(db, source, key):
     with db:
+        if source == 'mattermost':
+            # Forget the whole message, including any task citations derived from it.
+            base = '/'.join(key.split('/')[:3])
+            related = [r[0] for r in db.execute("SELECT source_key FROM evidence WHERE source=? AND (source_key=? OR substr(source_key,1,?)=?)", (source,base,len(base)+1,base+'/'))]
+            for item in set(related+[base,key]):
+                db.execute("INSERT OR IGNORE INTO tombstone VALUES(?,?)", (source,hashlib.sha256(item.encode()).hexdigest()))
+                db.execute("UPDATE learned SET value='',evidence='',status='rejected' WHERE instr(evidence,?)>0", (hashlib.sha256((source+'\0'+item).encode()).hexdigest(),))
+                db.execute("DELETE FROM evidence WHERE source=? AND source_key=?", (source,item))
         ids = [r[0] for r in db.execute("SELECT id FROM evidence WHERE source=? AND source_key=?",(source,key))]
         db.execute("INSERT OR IGNORE INTO tombstone VALUES(?,?)",(source,hashlib.sha256(key.encode()).hexdigest()))
         db.execute("DELETE FROM evidence WHERE source=? AND source_key=?",(source,key))

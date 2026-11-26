@@ -24,6 +24,20 @@ Primary Google Calendar is the default. To select multiple calendars, set the `c
 
 To enable Google event moves, reconnect with **`--calendar-write`**. A proposed move shows the new time and attendees, then requires **Approve move & notify attendees**. The event's ETag is rechecked before writing. An uncertain write is not retried automatically. Apple events are read-only.
 
+## Mattermost
+
+Paco reads recent direct/group messages and threads personally mentioning your username from channels you belong to. It checks a 14-day window every five minutes while the Mac is awake and active. Full reply context is considered; a mention alone is not a commitment. Up to four changed conversations are analyzed per cycle. Every proposed task must cite an exact message excerpt. Repeated syncs do not recreate the same cited task. Forgetting a message also removes its task citations and prevents reimport.
+
+Create a confidential OAuth application in your Mattermost team's **Integrations → OAuth 2.0 Applications**, with callback `http://127.0.0.1:18773/callback`. Leave **Is Trusted** unchecked. Run:
+
+```sh
+.venv/bin/python -m mattermost --base https://YOUR-MATTERMOST-SERVER
+```
+
+Enter the client ID and hidden client secret when prompted, then open the printed localhost link in your work browser profile. The loopback flow verifies state and uses PKCE. Credentials, including refresh tokens, stay in macOS Keychain; account settings contain no secrets. Mattermost grants broader account permissions than read-only. Paco's connector implements only a fixed list of read endpoints and cannot post messages. Authorize only if you accept that provider-level grant.
+
+In **Controls → Model → Allow this model to read**, enable **Mattermost direct messages and mentions** to allow your selected hosted model (including Codex CLI) to extract tasks. Without this permission, context is stored locally but is not analyzed by a hosted model. Message context stays in the local database; only structured tasks sync to the company service. **Disconnect** removes Paco's local account token; revoke the OAuth app in Mattermost as well to invalidate the server-side grant.
+
 ## Other sources
 
 GitHub uses the account authenticated in `gh` and checks its identity before polling. Connect in Settings or run `paco.py connect github`. GitHub requested reviews are also imported. Disappearing assignments become unavailable, retaining identity and history. A positive provider completion may satisfy dependencies; disappearance alone cannot. When an open item disappears from a task tracker (GitHub, GitLab, Linear, Jira, Asana, Todoist, Microsoft To Do, Google Tasks, Apple Reminders), Paco stops reminding and asks in the workspace whether you finished it.
