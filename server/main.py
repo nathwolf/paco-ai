@@ -17,7 +17,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.routes import create_protected_resource_routes
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
-from starlette.responses import JSONResponse,HTMLResponse
+from starlette.responses import JSONResponse,HTMLResponse,FileResponse
 from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -90,6 +90,9 @@ def create_app(path,base):
         return store.mutate(who,operations,request_id)
     @server.custom_route('/health',methods=['GET'])
     async def health(request):return JSONResponse({'ok':True,'service':'paco','schema_version':1})
+    @server.custom_route('/assets/paco.webp',methods=['GET'])
+    async def icon(request):
+        return FileResponse(Path(__file__).parent/'static/paco.webp',media_type='image/webp')
     @server.custom_route('/',methods=['GET'])
     async def home(request):return HTMLResponse('<!doctype html><title>Paco</title><h1>Paco · Internal task service</h1><p>Connect your company account from Paco settings or ChatGPT. MCP endpoint: /mcp.</p><p>Meeting transcripts and activity stay on your Mac. Accounts are created by your administrator.</p>')
     server.custom_route('/login',methods=['GET','POST'])(auth.login)
@@ -148,7 +151,7 @@ class Guard:
                 referrer = b'strict-origin' if scope['path']=='/login' and scope['method']=='GET' else b'no-referrer'
                 message['headers']+= [(b'cache-control',b'no-store'),(b'x-content-type-options',b'nosniff'),(b'referrer-policy',referrer),(b'x-frame-options',b'DENY')]
                 if not any(k.lower()==b'content-security-policy' for k,v in message['headers']):
-                    message['headers'].append((b'content-security-policy',b"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"))
+                    message['headers'].append((b'content-security-policy',b"default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"))
             await send(message)
         try:
             if int(headers.get(b'content-length',b'0'))>256*1024:return await JSONResponse({'error':'Request too large'},413)(scope,receive,secure)

@@ -1,11 +1,11 @@
 """Persistent OAuth provider for the official MCP SDK; no password-based OAuth grant."""
 import hashlib
-import html
 import json
 import secrets
 import re
 import time
 from urllib.parse import urlsplit,urlencode
+from server import pages
 from mcp.server.auth.provider import AuthorizationCode,RefreshToken,AccessToken,TokenError,AuthorizeError,RegistrationError,construct_redirect_uri
 from mcp.shared.auth import OAuthClientInformationFull,OAuthToken
 from starlette.responses import HTMLResponse,RedirectResponse,JSONResponse
@@ -80,38 +80,34 @@ class Auth:
     async def login(self,request):
         txn=request.query_params.get('transaction','')
         with self.store.db() as db:row=db.execute('SELECT payload FROM oauth_pending WHERE id=? AND expires>?',(txn,time.time())).fetchone()
-        if not row:return HTMLResponse('This sign-in request expired. Reconnect Paco from ChatGPT.',status_code=400)
+        if not row:return HTMLResponse(pages.message('Let’s reconnect','This sign-in link has expired. Return to the app you’re connecting and start a new connection.'),status_code=400)
         value=json.loads(row[0])
         if request.method=='POST':
             form=await request.form();csrf=str(form.get('csrf',''))
             if request.headers.get('origin')!=self.base or not csrf or not secrets.compare_digest(request.cookies.get('paco_csrf',''),csrf) or digest(csrf)!=value.get('csrf'):
-                return HTMLResponse('Invalid sign-in session. Reopen the connection.',status_code=403)
-            if not self.store.limit('login:'+str(form.get('username','')).casefold(),10) or not self.store.limit('login-global',100):return HTMLResponse('Too many attempts. Try again in 15 minutes.',status_code=429)
+                return HTMLResponse(pages.message('Let’s reconnect','Your sign-in session could not be verified. Return to the app you’re connecting and start again.'),status_code=403)
+            if not self.store.limit('login:'+str(form.get('username','')).casefold(),10) or not self.store.limit('login-global',100):return HTMLResponse(pages.message('A short pause','There have been too many sign-in attempts. Please try again in 15 minutes.'),status_code=429)
             user=self.store.authenticate(str(form.get('username',''))[:80],str(form.get('password',''))[:512])
-            if not user:return HTMLResponse('Sign-in failed. Go back and try again.',status_code=401)
+            if not user:return HTMLResponse(pages.message('Let’s try that again','The username or password didn’t match. Check your Paco account details and try again.', '/login?'+urlencode({'transaction':txn})),status_code=401)
             params=value['params'];code=secrets.token_urlsafe(40)
             record=dict(client_id=value['client_id'],scopes=params.get('scopes') or SCOPES,expires_at=time.time()+120,
                         code_challenge=params['code_challenge'],redirect_uri=params['redirect_uri'],
                         redirect_uri_provided_explicitly=params['redirect_uri_provided_explicitly'],resource=self.resource,subject=user['id'])
             with self.store.db() as db:
-                if db.execute('DELETE FROM oauth_pending WHERE id=? AND expires>?',(txn,time.time())).rowcount!=1:return HTMLResponse('Sign-in already completed.',status_code=400)
+                if db.execute('DELETE FROM oauth_pending WHERE id=? AND expires>?',(txn,time.time())).rowcount!=1:return HTMLResponse(pages.message('You’re already connected','This sign-in has already completed. Return to the app you were connecting.'),status_code=400)
                 db.execute('INSERT INTO oauth_codes VALUES(?,?,?)',(digest(code),json.dumps(record),record['expires_at']))
             response=RedirectResponse(construct_redirect_uri(params['redirect_uri'],code=code,state=params.get('state')),status_code=303)
             response.delete_cookie('paco_csrf');return response
         csrf=secrets.token_urlsafe(32);value['csrf']=digest(csrf)
         with self.store.db() as db:db.execute('UPDATE oauth_pending SET payload=? WHERE id=?',(json.dumps(value),txn))
-        client=html.escape(value['client_name']);scopes=html.escape(', '.join(value['params'].get('scopes') or SCOPES))
-        response=HTMLResponse(f'''<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Connect Paco</title>
-        <style>:root{{color-scheme:light dark}}body{{font:16px system-ui;max-width:420px;margin:12vh auto;padding:24px}}input,button{{box-sizing:border-box;width:100%;padding:12px;margin:8px 0}}button{{background:#376b55;color:white;border:0;border-radius:8px}}</style>
-        <h1>Connect Paco</h1><p>Company accounts only. No public registration.</p><p>Allow <strong>{client}</strong> to access your task account: {scopes}.</p><p>Meeting transcripts and activity history are not available through this connection.</p>
-        <form method="post"><input type="hidden" name="csrf" value="{csrf}"><label>Username<input name="username" autocomplete="username" required maxlength="80"></label><label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="512"></label><button>Sign in and connect</button></form></html>''')
+        response=HTMLResponse(pages.sign_in(value['client_name'],value['params'].get('scopes') or SCOPES,csrf))
         # Chromium/WebKit apply form-action to the 303 redirect as well as the
         # form POST. Allow only this transaction's already-validated callback
         # origin, never all HTTPS destinations or a client-supplied CSP string.
         callback=urlsplit(value['params']['redirect_uri'])
         origin=callback.scheme+'://'+callback.netloc
         if not re.fullmatch(r"https?://(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::[0-9]+)?",origin):
-            return HTMLResponse('Unsupported callback address. Reconnect from your application.',status_code=400)
-        response.headers['Content-Security-Policy']="default-src 'none'; style-src 'unsafe-inline'; form-action 'self' "+origin+"; frame-ancestors 'none'; base-uri 'none'"
+            return HTMLResponse(pages.message('Connection unavailable','This application’s return address is not supported. Ask your administrator to check its connection settings.'),status_code=400)
+        response.headers['Content-Security-Policy']="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; form-action 'self' "+origin+"; frame-ancestors 'none'; base-uri 'none'"
         response.set_cookie('paco_csrf',csrf,secure=True,httponly=True,samesite='lax',max_age=600)
         return response
