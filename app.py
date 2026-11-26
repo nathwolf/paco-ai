@@ -48,7 +48,7 @@ def save_settings(config):
 
 
 # Actions that read, change and save sources.json; serialized so concurrent saves cannot drop each other's changes.
-SETTINGS_ACTIONS = {'model','meeting_model','activity_model','connector_connect','connector_revoke','apple_connect','github_connect'}
+SETTINGS_ACTIONS = {'model','meeting_model','activity_model','connector_connect','connector_revoke','apple_connect','github_connect','mattermost_mentions'}
 SETTINGS_LOCK = threading.RLock()
 
 
@@ -433,6 +433,13 @@ def act(db,path,connect,data):
                 updated=dict(brief['data'],**{k:data[k] for k in ('name','area','hints') if k in data})
                 return {'id':project_brains.save(db,updated,int(data['id']),brief['revision'])['project']}
         return {'id':tagging.save_project(db,data)}
+    if action=='mattermost_mentions':
+        if type(data.get('enabled')) is not bool:raise ValueError('Choose whether group replies are enabled')
+        config=settings();connection=config.get('connectors',{}).get('mattermost')
+        if not connection or not connection.get('bot',{}).get('enabled'):raise ValueError('Connect the Paco Mattermost bot first')
+        bot=connection['bot'];bot['mentions_enabled']=data['enabled']
+        if data['enabled']:bot.setdefault('mentions_started_at',time.time())
+        save_settings(config);return {'ok':True}
     if action=='project_brain_save':
         return project_brains.save(db,data['data'],data.get('project'),data.get('revision',0),data.get('request_id'))
     if action=='project_brain_refresh':

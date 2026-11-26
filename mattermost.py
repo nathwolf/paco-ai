@@ -211,6 +211,13 @@ def sync(db, config, model, now=None, client=None, predict=None):
         version = hashlib.sha256(json.dumps(row,sort_keys=True).encode()).hexdigest()
         if db.execute('SELECT 1 FROM mattermost_revision WHERE key=? AND version=?',(key,version)).fetchone(): continue
         messages = [m for m in row['messages'] if not workflows.forgotten(db,'mattermost',account+'/'+m['id'])]
+        # Direct bot requests belong to the conversational handler, not passive intake.
+        # Otherwise a background source pass can race the reply and create a second task.
+        bot=config.get('bot',{})
+        if bot.get('enabled'):
+            from mattermost_mentions import mentioned
+            messages=[m for m in messages if m['sender']!=bot['user_id'] and
+                      not (bot.get('mentions_enabled') and mentioned(m['text'],bot.get('username','paco')))]
         if not messages: continue
         roots=[account+'/'+r for r in row.get('related_roots',[row['id']])]
         ids={r[0] for r in db.execute('SELECT task FROM mattermost_channel_task WHERE account=? AND channel=?',(account,channel))}

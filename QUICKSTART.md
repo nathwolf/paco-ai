@@ -355,3 +355,25 @@ the draft on failed saves. Private task lists, raw source conversations, meeting
 and activity history are not shared through a project brief. Trackers show the tasks known
 to this Mac, not a complete view of every colleague's private work. While the Mac is awake,
 Paco refreshes project facts and uses the briefs in task extraction, classification and chat.
+
+### Talking to Paco in Mattermost groups and channels
+
+Add **@paco** as a member of the group or channel, then mention him explicitly, for
+example `@paco resume este hilo y separa las responsabilidades de cada persona`.
+Paco replies in that same thread. Mention him again for follow-ups; ordinary messages,
+quoted mentions and other bots do not trigger replies. Both Paco and the connected
+owner must belong to the conversation. Paco does not automatically join channels.
+
+Shared replies use only the current thread, never your private task list, DM history,
+project briefs, email or activity. Participants can ask questions, plan and summarize
+what was discussed. The connected owner can also explicitly ask to add a new personal
+task or reminder. Existing private-task updates and private-account questions stay in
+the owner's direct message with Paco; other participants cannot modify that account.
+
+Controls → Sources → Mattermost has **Reply to @paco in groups and channels**.
+Like private replies, it runs while this Mac is awake and unlocked, checking roughly
+every 15 seconds. No new server service or administrator bot privileges are required.
+Delivery receipts prevent replaying replies or creating tasks twice after an uncertain
+network response. An uncertain send is reconciled against bot-authored receipts, never
+blindly retried. Shared conversation text is fetched for the reply, not copied into the
+company database. The local queue retains the answer and delivery metadata.

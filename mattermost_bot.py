@@ -1,4 +1,4 @@
-"""Private, owner-bound Mattermost conversation with durable task/reply receipts."""
+"""Owner-bound private chat plus isolated mention-only shared conversations."""
 import hashlib
 import json
 import time
@@ -107,11 +107,23 @@ def poll(db, config, model, client=None, predict=None, now=None):
     # Also protect explicit diagnostic runs or overlapping launch/restart attempts.
     import fcntl
     path=db.execute('PRAGMA database_list').fetchone()[2]
-    if not path:return _poll(db,config,model,client,predict,now)
+    if not path:return _poll_all(db,config,model,client,predict,now)
     with open(path+'.mattermost-bot.lock','a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:return {'replies':0,'busy':True}
-        return _poll(db,config,model,client,predict,now)
+        return _poll_all(db,config,model,client,predict,now)
+
+
+def _poll_all(db,config,model,client=None,predict=None,now=None):
+    errors=[];result={'replies':0,'shared_replies':0}
+    try:result.update(_poll(db,config,model,client,predict,now))
+    except Exception as exc:errors.append(str(exc) if isinstance(exc,ValueError) else 'Mattermost conversation check failed ('+type(exc).__name__+')')
+    if config.get('bot',{}).get('mentions_enabled'):
+        import mattermost_mentions
+        try:result['shared_replies']=mattermost_mentions.poll(db,config,model,now=now)['replies']
+        except Exception as exc:errors.append(str(exc) if isinstance(exc,ValueError) else 'Mattermost conversation check failed ('+type(exc).__name__+')')
+    if errors:raise ValueError('; '.join(errors))
+    return result
 
 
 def _poll(db, config, model, client=None, predict=None, now=None):
