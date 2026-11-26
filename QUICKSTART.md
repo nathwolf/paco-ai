@@ -330,3 +330,28 @@ The `--capture permissions` diagnostic on the native executable reports existing
 microphone, screen/audio and Accessibility grants without requesting new ones.
 
 For a long list or project brief, choose **Add tasks from text…** in the parrot menu. Review Paco's proposed tasks, owners, projects and dependencies before applying. Connect your internal account under **Company task account** in Settings to sync tasks with ChatGPT. See [COMPANY.md](COMPANY.md) for connection and storage details.
+
+### Quieter tasks and project brains
+
+The default Tasks view and reminders include accepted work assigned to you. Imported
+conversation requests wait in **To review** until you accept them; an explicit promise
+in your own sent message may be accepted automatically. Calendar events provide context
+without automatically creating a preparation obligation. Exact duplicates with matching
+project, owner and deadline link to one task while retaining their source evidence.
+Use the status filter to inspect suggestions, reference items, other responsibilities,
+dismissed items and duplicate links. Nothing is deleted by this migration.
+
+Open **Tasks → Project trackers → Edit project brain** to set a project's goal,
+milestone, scope, roles, stakeholders, decisions and source links. **New project** creates
+a shared brief. Use each person's username or email; add their other account identities
+as aliases. Roles distinguish execution, management, review, decisions and staying
+informed. A management role does not automatically assign you your colleagues' execution
+work. An explicit personal task or accepted suggestion can establish your own commitment.
+
+Briefs are shared with signed-in company members. Any member can create/edit them in this
+internal version; role labels are not permissions. Saves require the company service and
+use revisions: if someone changed the brief, refresh it and reapply your draft. Paco keeps
+the draft on failed saves. Private task lists, raw source conversations, meeting transcripts
+and activity history are not shared through a project brief. Trackers show the tasks known
+to this Mac, not a complete view of every colleague's private work. While the Mac is awake,
+Paco refreshes project facts and uses the briefs in task extraction, classification and chat.

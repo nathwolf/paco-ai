@@ -58,10 +58,19 @@ def reason_to_wait(db, now):
         return "Focus session in progress"
 
 
+class EligibleRows:
+    """Preserve the cursor interface while filtering responsibility-aware rows."""
+    def __init__(self,rows):self.rows=iter(rows)
+    def __iter__(self):return self
+    def __next__(self):return next(self.rows)
+    def fetchone(self):return next(self.rows,None)
+    def fetchall(self):return list(self.rows)
+
+
 def ranked(db, now, fit_before_meeting=True):
     until = db.execute("SELECT MIN(start) FROM busy WHERE start>?", (now,)).fetchone()[0] if fit_before_meeting else None
     goal = setting(db, "goal")
-    return db.execute("""SELECT t.*,d.goal,d.minutes,d.deadline,COALESCE(u.critical,0) AS critical,
+    rows = db.execute("""SELECT t.*,d.goal,d.minutes,d.deadline,COALESCE(u.critical,0) AS critical,
         CASE WHEN t.state='focus' THEN 1 ELSE 0 END AS checkin,
         CASE WHEN d.deadline<=? THEN 1 ELSE 0 END AS urgent,
         CASE WHEN d.goal=? AND d.goal!='' THEN 1 ELSE 0 END AS aligned
@@ -71,7 +80,9 @@ def ranked(db, now, fit_before_meeting=True):
             WHERE e.task=t.id AND p.state!='done')
         AND (t.state='focus' OR ? IS NULL OR d.minutes IS NULL OR d.minutes*60<=?-?)
         ORDER BY critical DESC, checkin DESC, urgent DESC, aligned DESC, t.priority DESC, t.due, t.id""",
-                      (now+86400, goal, now, until, until, now))
+                      (now+86400, goal, now, until, until, now)).fetchall()
+    import attention
+    return EligibleRows(r for r in rows if attention.eligible(db,r["id"]))
 
 
 MEETING_SOURCES = ('calendar', 'apple_calendar', 'outlook_calendar')
@@ -111,7 +122,8 @@ def meeting_due(db, now):
         ORDER BY t.due""", (*MEETING_SOURCES, now, now - 900)).fetchall()
     for row in rows:
         start = meeting_start(db, row['id'])
-        if start and now < start:
+        import attention
+        if start and now < start and attention.eligible(db,row['id']):
             return row
     return None
 

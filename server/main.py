@@ -24,7 +24,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 def create_app(path,base):
     base=base.rstrip('/');store=Store(path);auth=Auth(store,base)
-    server=FastMCP('Paco',instructions='Internal company task manager. Each account sees only its own tasks. Read current projects before cataloging work. Turn pasted briefs into concrete tasks and dependencies; separate suggestions from commitments. Never send raw transcripts, activity history or audio. Preview a breakdown and obtain user agreement before applying it.',
+    server=FastMCP('Paco',instructions='Internal company task manager. Each account sees only its own tasks. Shared project brains are editable by company members. Suggested/reference/duplicate/dismissed tasks are not active personal commitments. Read current projects before cataloging work. Turn pasted briefs into concrete tasks and dependencies; separate suggestions from commitments. Never send raw transcripts, activity history or audio. Preview a breakdown and obtain user agreement before applying it.',
         auth_server_provider=auth,auth=AuthSettings(issuer_url=base,resource_server_url=base+'/mcp',validate_token_resource=True,
         required_scopes=['tasks.read'],client_registration_options=ClientRegistrationOptions(enabled=True,valid_scopes=SCOPES,default_scopes=SCOPES),revocation_options=RevocationOptions(enabled=True)),
         stateless_http=True,json_response=True,max_request_body_size=256*1024,
@@ -49,6 +49,23 @@ def create_app(path,base):
     def projects_list(after:str='',limit:int=100)->dict:
         """List your project catalog and areas. Reuse existing projects where appropriate."""
         return store.listing(owner(),'project',after,limit)
+    @server.tool(annotations=read)
+    def project_brain_format()->dict:
+        """Read the shared project brief and role format before creating or changing a project brain."""
+        return {'fields':['name','area','hints','objective','milestone','done_when','out_of_scope','stakeholders','decisions','sources','roles'],
+                'text_fields':'All fields are text except sources (web URL list) and roles (list below).',
+                'role':{'id':'stable UUID','person':'username or email','mode':'execute/manage/review/decide/informed','responsibilities':'what this person owns','aliases':['other usernames or emails']},
+                'policy':'All authenticated members of the company workspace can edit; revision required. Do not include raw private messages, transcripts or activity.'}
+    @server.tool(annotations=read)
+    def project_brains_list()->dict:
+        """Read shared company project objectives, roles, stakeholders and source links. Personal task lists remain private."""
+        from server import brains
+        return brains.listing(store,owner())
+    @server.tool(annotations=write)
+    def project_brain_save(data:dict,revision:int,request_id:str,id:str|None=None)->dict:
+        """Create or edit a shared project brief after reading its revision. All company members can edit. Role fields describe responsibilities, not access permissions. Do not send raw private source text."""
+        from server import brains
+        return brains.save(store,owner(True),data,revision,request_id,id)
     @server.tool(annotations=write)
     def task_create(title:str,request_id:str,description:str='',project_id:str|None=None,assignee:str='',deadline:float|None=None,estimate_minutes:int=30)->dict:
         """Create an explicitly requested task. request_id is a unique stable UUID for safe retries. Deadline is UTC Unix seconds; do not invent dates or owners."""
@@ -57,7 +74,7 @@ def create_app(path,base):
         return store.mutate(who,[dict(kind='task',id=ident,revision=0,data=data)],request_id)
     @server.tool(annotations=write)
     def task_update(id:str,revision:int,changes:dict,request_id:str)->dict:
-        """Update your task after reading its revision. Allowed fields: title, description, status (open/done/blocked/archived/cancelled), priority (1-5), urgent, project_id, assignee, deadline, remind_at, estimate_minutes, goal, parent_id, dependencies, tags, source_url. No activity or meeting text."""
+        """Update your task after reading its revision. Allowed fields: title, description, status (open/done/blocked/archived/cancelled), priority (1-5), urgent, project_id, assignee, deadline, remind_at, estimate_minutes, goal, parent_id, dependencies, tags, source_url, intake_status (accepted/suggested/reference/dismissed/duplicate), responsibility (execute/review/decide/follow_up/informed), duplicate_of. No activity or meeting text."""
         who=owner(True);current=store.get(who,'task',id)
         if not current:raise ValueError('Task not found')
         patch=clean_task(changes,partial=True);data=dict(current['data'],**patch)
@@ -119,6 +136,13 @@ def create_app(path,base):
         who=owner(True);data=await request.json()
         if not isinstance(data,dict):raise ValueError('Expected a JSON object')
         return JSONResponse(store.mutate(who,data['operations'],data['request_id']))
+    @server.custom_route('/api/project-brains',methods=['GET','POST'])
+    async def project_brains(request):
+        from server import brains
+        if request.method=='GET':return JSONResponse(brains.listing(store,owner()))
+        who=owner(True);data=await request.json()
+        if not isinstance(data,dict) or set(data)-{'id','revision','data','request_id'}:raise ValueError('Invalid project request')
+        return JSONResponse(brains.save(store,who,data['data'],data['revision'],data['request_id'],data.get('id')))
     app=server.streamable_http_app()
     # The SDK derives advertised scopes from required_scopes. Reading is the
     # minimum permission, but clients must discover writing and refresh access too.

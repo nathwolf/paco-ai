@@ -124,3 +124,19 @@ class HTTP(unittest.TestCase):
             self.assertEqual(json.load(self.request('/api/banner'))['task'],1)
             with paco.connect(self.path) as db:db.execute('INSERT INTO busy VALUES(?,?)',(time.time()-10,time.time()+300))
             self.assertIsNone(json.load(self.request('/api/banner')))
+
+    def test_queued_urgent_banner_rechecks_assignee_and_admission(self):
+        import time,attention
+        with paco.connect(self.path) as db:
+            attention.add_identities(db,['nathalia'])
+            db.execute("INSERT INTO task VALUES(1,'queued',5,'open',0,0)")
+            db.execute('INSERT INTO urgency VALUES(1,1)')
+            db.execute("INSERT INTO ownership VALUES(1,'juan','')")
+            db.execute("INSERT INTO notification(task,message,mood,reason,created) VALUES(1,'urgent','angry','urgent',?)",(time.time(),))
+        self.assertIsNone(json.load(self.request('/api/banner')))
+        with paco.connect(self.path) as db:
+            db.execute("UPDATE ownership SET owner='nathalia'")
+            attention.record(db,1,'suggested','Needs confirmation','gmail')
+        self.assertIsNone(json.load(self.request('/api/banner')))
+        with paco.connect(self.path) as db:attention.decision(db,1,'accept')
+        self.assertEqual(json.load(self.request('/api/banner'))['task'],1)

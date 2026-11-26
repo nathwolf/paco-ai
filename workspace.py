@@ -32,7 +32,7 @@ def start(db, data, now):
 
 def edit_task(db, data, commit=True):
     ident=int(data['id']) if data.get('id') is not None else None;changes=data.get('changes',{})
-    allowed={'title','description','tags','priority','urgent','deadline','estimate_minutes','assignee','project'}
+    allowed={'title','description','tags','priority','urgent','deadline','estimate_minutes','assignee','project','responsibility'}
     if not isinstance(changes,dict) or set(changes)-allowed:raise ValueError('Unsupported task edit')
     fields=clean_task({k:v for k,v in changes.items() if k!='project'},partial=True)
     if ident is None and not fields.get('title'):raise ValueError('A task needs a title')
@@ -41,6 +41,9 @@ def edit_task(db, data, commit=True):
     with (db if commit else nullcontext()):
         if ident is None:
             ident=db.execute("INSERT INTO task(title,priority,state,due) VALUES(?,?,'open',?)",(fields['title'],fields.get('priority',3),time.time())).lastrowid
+        if data.get('id') is None:
+            import attention
+            attention.record(db,ident,'accepted','Explicit task creation','direct')
         if not db.execute('SELECT 1 FROM task WHERE id=?',(ident,)).fetchone():raise ValueError('Unknown task')
         for key in ('title','priority'):
             if key in fields:db.execute(f'UPDATE task SET {key}=? WHERE id=?',(fields[key],ident))
@@ -52,6 +55,10 @@ def edit_task(db, data, commit=True):
         if 'description' in fields or 'tags' in fields:
             old=db.execute('SELECT * FROM task_extra WHERE task=?',(ident,)).fetchone()
             db.execute('INSERT OR REPLACE INTO task_extra VALUES(?,?,?,?)',(ident,fields.get('description',old['description'] if old else ''),old['parent'] if old else None,json.dumps(fields['tags']) if 'tags' in fields else old['tags'] if old else '[]'))
+        if 'responsibility' in fields:
+            import attention
+            old_attention=attention.info(db,ident)
+            attention.record(db,ident,old_attention['status'],old_attention['reason'],old_attention['source'],fields['responsibility'],old_attention['duplicate_of'])
         if 'assignee' in fields:db.execute("INSERT INTO ownership VALUES(?,?,'') ON CONFLICT(task) DO UPDATE SET owner=excluded.owner",(ident,fields['assignee']))
         previous_project = db.execute('SELECT project FROM task_project WHERE task=?', (ident,)).fetchone()
         if 'project' in changes and ((previous_project and previous_project['project'] != project) or (not previous_project and project is not None)):

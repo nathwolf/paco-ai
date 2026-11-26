@@ -210,6 +210,14 @@ def reconcile(db, source, rows, now):
                                     (title, due))
                 db.execute("INSERT INTO discovered VALUES(?,?,?,?)", (source, key, cursor.lastrowid, due))
                 task_id = cursor.lastrowid
+            if source not in ('calendar','apple_calendar','outlook_calendar'):
+                import attention
+                if not db.execute('SELECT 1 FROM task_attention WHERE task=?',(task_id,)).fetchone():
+                    attention.record(db,task_id,'accepted','Assigned to your connected source account',source,'review' if source=='github_reviews' else 'execute')
+            if source in ('calendar','apple_calendar','outlook_calendar'):
+                import attention
+                if not db.execute('SELECT 1 FROM task_attention WHERE task=?',(task_id,)).fetchone():
+                    attention.record(db,task_id,'reference','Calendar event; preparation is optional',source)
             db.execute("INSERT OR REPLACE INTO source_state VALUES(?,?,'active',NULL)", (source,key))
         if source != "gmail":
             for key, (task_id, _) in previous.items():

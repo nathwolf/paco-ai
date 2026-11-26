@@ -317,6 +317,8 @@ def review_item(db,ident,data):
             task=db.execute("INSERT INTO task(title,priority,state,due) VALUES(?,3,?,?)",(item['title'],'blocked' if item['condition'] else 'open',time.time())).lastrowid
             db.execute('INSERT INTO details(task,goal,deadline) VALUES(?,?,?)',(task,'Meeting: '+get(db,row['meeting'])['title'],deadline))
             db.execute('INSERT INTO ownership VALUES(?,?,?)',(task,item['owner'],''))
+            import attention
+            attention.record(db,task,'accepted','You confirmed this meeting action','direct')
         if task and row['task']:
             db.execute('UPDATE task SET title=? WHERE id=?',(item['title'],task))
             db.execute('UPDATE ownership SET owner=? WHERE task=?',(item['owner'],task))
@@ -324,6 +326,10 @@ def review_item(db,ident,data):
                 db.execute("UPDATE task SET state='open',due=? WHERE id=? AND state='blocked'",(time.time(),task))
             if status=='dismissed' or (item['owner']!=previous_owner and not data.get('mine')):
                 db.execute("UPDATE task SET state='archived' WHERE id=?",(task,))
+        if task and data.get('mine'):
+            import company_sync
+            who=(company_sync.setting(db,'account') or {}).get('username') or 'me'
+            db.execute('UPDATE ownership SET owner=? WHERE task=?',(who,task))
         db.execute('UPDATE meeting_item SET payload=?,status=?,task=?,edited=1 WHERE id=?',(json.dumps(item),status,task,ident))
         db.execute('UPDATE meeting_note SET revision=revision+1 WHERE id=?',(row['meeting'],))
     return {'task':task}

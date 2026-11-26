@@ -28,18 +28,22 @@ def _snapshot(db, project, now):
         task['waiting_on'] = [dict(r) for r in db.execute('''
             SELECT p.id,p.title,p.state FROM dependency e JOIN task p ON p.id=e.prerequisite
             WHERE e.task=? AND p.state!='done' ORDER BY p.id''', (task['id'],))] if task['state'] in ACTIVE else []
+    import attention, project_brains
+    suggested=sum(attention.info(db,t['id'])['status']=='suggested' for t in rows)
+    rows=[t for t in rows if attention.info(db,t['id'])['status']=='accepted']
+    for task in rows:task['mine']=attention.eligible(db,task['id'])
     active = [t for t in rows if t['state'] in ACTIVE]
     blocked = [t for t in active if t['state']=='blocked' or t['waiting_on']]
     overdue = [t for t in active if t['deadline'] is not None and t['deadline'] < now]
     upcoming = [t for t in active if t['deadline'] is not None and now <= t['deadline'] <= now+3*86400]
     urgent = [t for t in active if t['urgent']]
     completed = sum(t['state']=='done' for t in rows)
-    ready = [t for t in active if t not in blocked]
+    ready = [t for t in active if t not in blocked and t['mine']]
     ready.sort(key=lambda t:(not t['urgent'],t['deadline'] if t['deadline'] is not None else float('inf'),-t['priority'],t['id']))
     status = ('empty' if not rows else 'complete' if not active else 'blocked' if blocked else
               'attention' if overdue or urgent else 'active')
     return dict(project=project['id'],name=project['name'],area=project['area'],user_created=bool(project['user_created']),
-                status=status,active=len(active),completed=completed,total=len(rows),
+                status=status,suggested=suggested,my_active=sum(t['mine'] for t in active),brief=project_brains.context(db,project['id'])[0],active=len(active),completed=completed,total=len(rows),
                 blocked=len(blocked),overdue=len(overdue),upcoming=len(upcoming),urgent=len(urgent),
                 next_task=ready[0] if ready else None,blockers=blocked[:10],
                 deadlines=sorted(overdue+upcoming,key=lambda t:(t['deadline'],t['id']))[:10],tasks=rows)

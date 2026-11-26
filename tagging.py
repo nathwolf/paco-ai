@@ -329,7 +329,8 @@ def _by_model(db, tasks, candidates, config, complete=None, examples=None, now=N
     names = {p['name'].casefold(): p['id'] for p in candidates}
     examples = examples or []
     project_names = {p['id']: p['name'] for p in candidates}
-    data = {'projects': [{'name': p['name'], 'area': p['area'], 'hints': p['hints'], 'user_created': bool(p['user_created'])} for p in candidates],
+    import project_brains
+    data = {'project_briefs':project_brains.context(db),'projects': [{'name': p['name'], 'area': p['area'], 'hints': p['hints'], 'user_created': bool(p['user_created'])} for p in candidates],
             'examples': [{'title': e['title'], 'project': project_names.get(e['project']), 'source_group': e['group']} for e in examples[:20]],
             'tasks': [{'id': t['id'], 'title': t['title'], 'source_group': source_group(db, t['id']),
                        'context': _text(db, t)[:8000],

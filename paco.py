@@ -56,6 +56,8 @@ def initialize(db):
         state TEXT NOT NULL, due REAL NOT NULL, nudges INTEGER NOT NULL DEFAULT 0
     )""")
     planning.initialize(db)
+    import attention
+    attention.initialize(db)
     import workflows
     workflows.initialize(db)
     import meetings
@@ -67,6 +69,8 @@ def initialize(db):
     slacking.initialize(db)
     import tagging
     tagging.initialize(db)
+    import project_brains
+    project_brains.initialize(db)
     import intake, company_sync
     intake.initialize(db)
     company_sync.initialize(db)

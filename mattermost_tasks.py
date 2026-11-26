@@ -9,7 +9,7 @@ import workflows
 import workspace
 from task_contract import clean_task
 
-FIELDS = {'title','description','priority','urgent','deadline','remind_at','estimate_minutes','assignee','tags','status','project'}
+FIELDS = {'title','description','priority','urgent','deadline','remind_at','estimate_minutes','assignee','tags','status','project','responsibility'}
 
 
 def initialize(db):
@@ -21,6 +21,9 @@ def initialize(db):
 
 
 def task(db, ident):
+    import attention
+    alias=attention.info(db,ident).get('duplicate_of')
+    if alias:ident=alias
     value = company_sync.local_data(db,'task',ident)
     if value is None: return None
     row = db.execute('SELECT project FROM task_project WHERE task=?',(ident,)).fetchone()
@@ -69,7 +72,7 @@ def prepare(db, action, context, messages, account, direct=False, current_messag
         if not current or snapshot(current)!=proposal['snapshot']:raise ValueError('Task changed since that proposal; ask Paco to review it again')
         fields=json.loads(proposal['changes']);ident=proposal['task'];expected=current
     else:
-        fields=changes(action.get('changes') or ({'title':action.get('title')} if kind=='add' else {}))
+        fields=changes(action.get('changes') or ({'title':action.get('title'),**({'responsibility':action['responsibility']} if 'responsibility' in action else {})} if kind=='add' else {}))
         ident=None if kind=='add' else action.get('task')
         expected=None if ident is None else next((t for t in context if t['id']==ident),None)
         if kind=='update' and (type(ident) is not int or expected is None):raise ValueError('Task was not in this conversation context')
@@ -82,7 +85,7 @@ def prepare(db, action, context, messages, account, direct=False, current_messag
     # Add identity deliberately matches the original connector's message+quote identity.
     digest=hashlib.sha256((msg['id']+'\0'+quote+((':'+json.dumps(fields,sort_keys=True)) if kind!='add' else '')).encode()).hexdigest()
     return dict(key=account+'/'+digest,kind=kind,task=ident,fields=fields,expected=expected,msg=msg,quote=quote,
-                proposal=action.get('proposal'),suggest=kind=='update' and not direct and not msg.get('mine'))
+                direct=direct,proposal=action.get('proposal'),suggest=kind=='update' and not direct and not msg.get('mine'))
 
 
 def apply(db, item, base, account, now=None):
@@ -110,6 +113,11 @@ def apply(db, item, base, account, now=None):
         if 'remind_at' in fields:
             db.execute('UPDATE task SET due=?,nudges=0 WHERE id=?',(fields['remind_at'],ident))
         if item['kind']=='approve':db.execute("UPDATE mattermost_proposal SET status='accepted' WHERE id=?",(item['proposal'],))
+        import attention
+        if item['kind']=='add' and not item.get('direct'):
+            attention.candidate(db,ident,'mattermost',kind=fields.get('responsibility','execute'))
+        elif item.get('direct') and item['kind']=='add':
+            attention.record(db,ident,'accepted','Explicit request in your private DM','direct',fields.get('responsibility','execute'))
         result=dict(kind='created' if item['kind']=='add' else 'updated',task=ident,title=task(db,ident)['title'],changes=fields)
         workflows.changed(db,'task.'+result['kind'],{'id':ident,'source':'mattermost'})
     citation=account+'/'+item['msg']['id']+'/'+item['key'].rsplit('/',1)[-1]

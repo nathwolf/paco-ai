@@ -84,3 +84,24 @@ To restore, stop the service, preserve the current `data/` directory, restore a 
 ## Verification
 
 Install `server/requirements.txt` and run `python -m unittest test_company -v` for isolation, OAuth/PKCE, token revocation, transactional plans, private-field rejection, offline retry, forward dependencies, focus preservation and conflict handling. Run the full repository suite before installing the Mac app with `python paco.py install`. Public HTTPS availability and a real ChatGPT account connection are separate from local/tunneled tests.
+
+### Shared project context and personal responsibilities
+
+Shared project briefs live separately from account-owned tasks, in `shared_brain` under
+company workspace membership. All active manually provisioned accounts in this internal
+company can edit the briefs; granular permissions can be added around the existing
+membership boundary later. Stable project and role UUIDs, optimistic revisions, idempotency
+receipts and an actor-attributed revision history protect concurrent edits. Personal task
+records remain account-isolated. Raw transcripts, messages and activity fields are rejected.
+
+MCP clients can use `project_brains_list`, `project_brain_format` and
+`project_brain_save`. Read the current brief and revision before editing; use a stable
+request ID for retries. The Mac uses the authenticated `/api/project-brains` endpoint and
+keeps a local cache. Unknown goals and roles remain blank until a person defines them.
+
+Tasks carry `intake_status`, `responsibility` and an optional `duplicate_of` UUID in the
+sync contract. Conversation suggestions are distinct from accepted commitments. Exact
+assignee matching and delivery-time eligibility checks keep another person's task out of
+your reminders, including urgent tasks. Project roles also constrain imported execution
+work. The migration preserves records and source evidence and only changes admission
+metadata; it never deletes tasks or changes their completion state.

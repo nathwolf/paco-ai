@@ -32,6 +32,8 @@ class Store:
             CREATE TABLE IF NOT EXISTS tokens(hash TEXT PRIMARY KEY,kind TEXT NOT NULL,payload TEXT NOT NULL,family TEXT NOT NULL,expires REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS rate_limits(key TEXT PRIMARY KEY,count INTEGER NOT NULL,expires REAL NOT NULL);
             ''')
+        from server import brains
+        with self.db() as db:brains.initialize(db)
         self.path.chmod(0o600)
     @contextmanager
     def db(self):
@@ -44,6 +46,8 @@ class Store:
         if not username or len(username)>80 or len(password)<8:raise ValueError('Username and a password of at least eight characters required')
         with self.db() as db:
             ident=str(uuid.uuid4());db.execute('INSERT INTO users(id,username,password_hash) VALUES(?,?,?)',(ident,username,PASSWORDS.hash(password)))
+            from server.brains import COMPANY
+            db.execute('INSERT INTO workspace_member VALUES(?,?)',(COMPANY,ident))
             return ident
     def authenticate(self,username,password):
         with self.db() as db:r=db.execute('SELECT * FROM users WHERE username=? AND active=1',(username,)).fetchone()
@@ -60,7 +64,7 @@ class Store:
             return db.execute('SELECT count FROM rate_limits WHERE key=?',(key,)).fetchone()[0]<=maximum
     @staticmethod
     def row(row):
-        return dict(id=row['id'],kind=row['kind'],revision=row['revision'],updated=row['updated'],data=json.loads(row['payload'])) if row else None
+        return dict(id=row['id'],kind=row['kind'],revision=row['revision'],updated=row['updated'],data=clean_task(json.loads(row['payload'])) if row['kind']=='task' else json.loads(row['payload'])) if row else None
     def get(self,owner,kind,ident):
         with self.db() as db:return self.row(db.execute('SELECT * FROM entities WHERE owner=? AND kind=? AND id=?',(owner,kind,identifier(ident))).fetchone())
     def listing(self,owner,kind,after='',limit=100):
@@ -104,7 +108,7 @@ class Store:
             projects={r[0] for r in db.execute("SELECT id FROM entities WHERE owner=? AND kind='project'",(owner,))}
             for ident,data in tasks.items():
                 if data['project_id'] and data['project_id'] not in projects:raise ValueError('Project belongs to another account or does not exist')
-                for ref in data['dependencies']+([data['parent_id']] if data['parent_id'] else []):
+                for ref in data['dependencies']+([data['parent_id']] if data['parent_id'] else [])+([data['duplicate_of']] if data.get('duplicate_of') else []):
                     if ref==ident or ref not in tasks:raise ValueError('Invalid task reference')
             def cycles(field):
                 visiting=set();done=set()
@@ -112,11 +116,11 @@ class Store:
                     if ident in visiting:raise ValueError('Task relationships cannot contain cycles')
                     if ident in done:return
                     visiting.add(ident)
-                    refs=tasks[ident][field] if field=='dependencies' else ([tasks[ident][field]] if tasks[ident][field] else [])
+                    refs=tasks[ident].get(field) if field=='dependencies' else ([tasks[ident].get(field)] if tasks[ident].get(field) else [])
                     for ref in refs:visit(ref)
                     visiting.remove(ident);done.add(ident)
                 for ident in tasks:visit(ident)
-            cycles('dependencies');cycles('parent_id')
+            cycles('dependencies');cycles('parent_id');cycles('duplicate_of')
             value={'items':result}
             db.execute('INSERT INTO operations VALUES(?,?,?,?,?)',(owner,key,digest,json.dumps(value),time.time()))
             return value

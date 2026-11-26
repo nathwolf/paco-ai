@@ -20,6 +20,9 @@ def initialize(db):
     CREATE TABLE IF NOT EXISTS company_task_fields(task INTEGER PRIMARY KEY,source_url TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS company_conflict(remote TEXT PRIMARY KEY,kind TEXT NOT NULL,payload TEXT NOT NULL,fields TEXT NOT NULL);
     ''')
+    with db:
+        for row in db.execute("SELECT local,base FROM company_link WHERE kind='task' AND base IS NOT NULL").fetchall():
+            db.execute("UPDATE company_link SET base=? WHERE kind='task' AND local=?",(json.dumps(clean_task(json.loads(row['base']))),row['local']))
 
 
 def setting(db,key,default=None):
@@ -114,7 +117,9 @@ def local_data(db,kind,local):
     link=links.for_task(db,local)
     source=db.execute('SELECT source_url FROM company_task_fields WHERE task=?',(local,)).fetchone()
     # Explicit allowlist: no evidence, transcript, reply text, summary, activity or config.
-    return clean_task(dict(title=r['title'],description=extra['description'] if extra else '',
+    import attention
+    admission=attention.info(db,local)
+    return clean_task(dict(intake_status=admission['status'],responsibility=admission['kind'],duplicate_of=remote_id(db,'task',admission['duplicate_of']),title=r['title'],description=extra['description'] if extra else '',
         status=r['state'] if r['state'] in ('open','done','blocked','archived','cancelled') else 'open' if r['state']=='focus' else 'archived',
         priority=r['priority'],urgent=bool(urgent and urgent[0]),project_id=remote_id(db,'project',project[0]) if project else None,
         assignee=owner[0] if owner else '',deadline=detail['deadline'] if detail else None,remind_at=r['due'],
@@ -145,6 +150,9 @@ def apply_local(db,kind,local,data):
         row=db.execute('SELECT local FROM company_link WHERE remote=? AND kind=?',(remote,kind)).fetchone()
         if not row:raise ValueError('Related record not synchronized yet')
         return row[0]
+    import attention
+    old_admission=attention.info(db,local)
+    attention.record(db,local,data['intake_status'],old_admission['reason'],old_admission['source'],data['responsibility'],lid(data['duplicate_of']))
     current=db.execute('SELECT state,due FROM task WHERE id=?',(local,)).fetchone()
     state='focus' if current['state']=='focus' and data['status']=='open' else data['status']
     due=data['remind_at'] if data['remind_at'] is not None else current['due']
@@ -234,7 +242,7 @@ def sync(db,transport=None):
                 item=remaining[ident];found[ident]=item
                 if item['kind']=='task':
                     data=item['data']
-                    for ref in [data['project_id'],data['parent_id']]+data['dependencies']:
+                    for ref in [data['project_id'],data['parent_id'],data.get('duplicate_of')]+data['dependencies']:
                         if ref:related(ref,found)
             for ident in remaining:
                 group={};related(ident,group)

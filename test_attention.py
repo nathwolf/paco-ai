@@ -1,0 +1,105 @@
+import json
+import tempfile
+import time
+import unittest
+import uuid
+from pathlib import Path
+from unittest.mock import Mock
+import app,attention,company_sync,discovery,mail_reasoning,paco,planning,project_brains,tagging,workspace
+from test_mail_reasoning import message
+
+class Attention(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.path=Path(self.temp.name)/'db';self.db=paco.connect(self.path);self.addCleanup(self.db.close);app.initialize(self.db)
+        with self.db:attention.add_identities(self.db,['nathalia','nwolf','nathalia@example.test'])
+    def task(self,title='Review the project launch document',**fields):
+        return workspace.edit_task(self.db,{'changes':dict(title=title,**fields)})['id']
+    def test_foreign_urgent_task_never_enters_reminders_or_plan(self):
+        ident=self.task(assignee='Juan',urgent=True)
+        self.assertFalse(attention.eligible(self.db,ident))
+        self.assertIsNone(planning.ranked(self.db,time.time()).fetchone())
+        self.assertEqual(planning.morning_plan(self.db,time.time()),[])
+        self.assertFalse(app.state(self.db)['tasks'][0]['my_responsibility'])
+    def test_identity_matching_is_exact_not_substring(self):
+        self.assertTrue(attention.mine(self.db,'Nathalia <nathalia@example.test>'))
+        self.assertTrue(attention.mine(self.db,'@nwolf'))
+        self.assertFalse(attention.mine(self.db,'nathalia-other'))
+        self.assertFalse(attention.mine(self.db,'juan'))
+    def test_suggestion_accept_dismiss_and_urgency(self):
+        task=self.task(assignee='nathalia',urgent=True)
+        with self.db:attention.candidate(self.db,task,'gmail')
+        self.assertFalse(attention.eligible(self.db,task))
+        attention.decision(self.db,task,'accept');self.assertTrue(attention.eligible(self.db,task))
+        attention.decision(self.db,task,'dismiss');self.assertFalse(attention.eligible(self.db,task))
+        other=self.task('Juan must send the project report',assignee='Juan')
+        with self.assertRaises(ValueError):attention.decision(self.db,other,'accept')
+    def test_calendar_is_reference_but_real_assignment_still_active(self):
+        discovery.reconcile(self.db,'calendar',[('event1','Prepare for weekly meeting',time.time())],time.time())
+        discovery.reconcile(self.db,'github',[('issue1','Fix the solver initialization problem',time.time())],time.time())
+        values=app.state(self.db)['tasks'];bytitle={t['title']:t for t in values}
+        self.assertFalse(bytitle['Prepare for weekly meeting']['my_responsibility'])
+        self.assertEqual(bytitle['Prepare for weekly meeting']['attention']['status'],'reference')
+        self.assertTrue(bytitle['Fix the solver initialization problem']['my_responsibility'])
+    def test_cross_thread_duplicate_links_to_one_commitment(self):
+        mail_reasoning.initialize(self.db)
+        for index in ('1','2'):
+            thread=dict(id='thread'+index,historyId=index,messages=[message(index,'Please review the final project budget.')])
+            model=Mock(return_value={'actions':[dict(kind='add',title='Review the final project budget',message=index,quote='review the final project budget')]})
+            mail_reasoning.analyze(self.db,thread,{},'nathalia@example.test',model)
+        rows=[dict(r) for r in self.db.execute('SELECT * FROM task_attention ORDER BY task')]
+        self.assertEqual([r['status'] for r in rows],['suggested','duplicate'])
+        self.assertEqual(rows[1]['duplicate_of'],rows[0]['task'])
+        self.assertEqual(self.db.execute('SELECT count(DISTINCT task) FROM mail_task').fetchone()[0],1)
+        self.assertEqual(self.db.execute('SELECT count(DISTINCT task) FROM evidence').fetchone()[0],1)
+    def test_distinct_project_owner_date_and_short_title_do_not_merge(self):
+        project=tagging.save_project(self.db,{'name':'oles'})
+        task=self.task(assignee='nathalia',project=project,deadline=100)
+        self.assertIsNone(attention.find_duplicate(self.db,'Review the project launch document','Juan',project,deadline=100))
+        self.assertIsNone(attention.find_duplicate(self.db,'Review the project launch document','nathalia',project,deadline=200))
+        self.assertIsNone(attention.find_duplicate(self.db,'Review the project launch document','nathalia',None,deadline=100))
+        self.assertEqual(attention.find_duplicate(self.db,'Review the project launch document','nathalia',project,deadline=100),task)
+    def test_sent_self_commitment_is_accepted_but_other_peoples_promises_are_not(self):
+        self.assertTrue(attention.self_commitment("I'll prepare the release notes",True))
+        self.assertFalse(attention.self_commitment("I'll prepare the release notes",False))
+        self.assertTrue(attention.self_commitment('Me encargo de revisar los resultados',True))
+        self.assertFalse(attention.self_commitment('Juan will handle the release',True))
+        self.assertFalse(attention.self_commitment("Juan said I'll prepare the release",True))
+    def test_manager_role_does_not_inherit_execution_but_direct_request_wins(self):
+        project=tagging.save_project(self.db,{'name':'quila'})
+        project_brains.apply(self.db,dict(id=str(uuid.uuid4()),revision=1,updated=1,actor='user',data={'name':'quila','roles':[{'id':str(uuid.uuid4()),'person':'nathalia','mode':'manage','responsibilities':'Coordinate stakeholders'}]}),project)
+        task=self.task(project=project)
+        with self.db:attention.record(self.db,task,'accepted','Imported assignment','github')
+        self.assertFalse(attention.eligible(self.db,task))
+        with self.db:attention.record(self.db,task,'accepted','Review requested','github_reviews','review')
+        self.assertTrue(attention.eligible(self.db,task))
+        with self.db:attention.record(self.db,task,'accepted','Explicit request','direct')
+        self.assertTrue(attention.eligible(self.db,task))
+    def test_admission_and_duplicate_reference_survive_company_wire_format(self):
+        a=self.task();b=self.task()
+        with self.db:attention.candidate(self.db,b,'gmail')
+        company_sync.ensure_links(self.db)
+        data=company_sync.local_data(self.db,'task',b)
+        self.assertEqual(data['intake_status'],'duplicate')
+        self.assertEqual(data['duplicate_of'],company_sync.remote_id(self.db,'task',a))
+        with self.db:company_sync.apply_local(self.db,'task',b,data)
+        self.assertFalse(attention.eligible(self.db,b))
+
+    def test_legacy_mail_migration_keeps_all_evidence_and_is_repeatable(self):
+        a=self.task();b=self.task()
+        with self.db:
+            self.db.execute('DELETE FROM task_attention')
+            self.db.execute('CREATE TABLE mail_task(thread TEXT,message TEXT,quote TEXT,task INTEGER PRIMARY KEY,UNIQUE(thread,message,quote))')
+            self.db.execute("INSERT INTO mail_task VALUES('a','1','quote',?)",(a,))
+            self.db.execute("INSERT INTO mail_task VALUES('b','2','quote',?)",(b,))
+            import workflows
+            workflows.remember(self.db,'gmail','a/1/quote','quote',task=a)
+            workflows.remember(self.db,'gmail','b/2/quote','quote',task=b)
+        attention.migrate(self.db);attention.migrate(self.db)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM mail_task').fetchone()[0],2)
+        self.assertEqual(self.db.execute('SELECT count(DISTINCT task) FROM mail_task').fetchone()[0],1)
+        self.assertEqual(sorted(r[0] for r in self.db.execute('SELECT status FROM task_attention')),['duplicate','suggested'])
+
+    def test_email_addresses_in_titles_do_not_erase_the_task_text(self):
+        self.task('Email stakeholder.longname@example.test about the budget')
+        self.assertIsNone(attention.find_duplicate(self.db,'Email stakeholder.longname@example.test about the launch'))

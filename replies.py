@@ -165,10 +165,10 @@ def reply(db, data, config=None, now=None):
         intent={'kind':'done','person':json.loads(previous['intent'])['person']}
     modeled=False;answer=None
     if intent is None and config:
-        import project_tracking
+        import project_tracking, project_brains
         import tagging
         project=tagging.of_task(db,task) if task else None
-        context={'project_trackers':project_tracking.summaries(db,now,project['id']) if project else [],'reply':text,'notification':dict(alert) if alert else None,
+        context={'project_briefs':project_brains.context(db,project['id']) if project else [],'project_trackers':project_tracking.summaries(db,now,project['id']) if project else [],'reply':text,'notification':dict(alert) if alert else None,
                  'task':dict(db.execute('SELECT * FROM task WHERE id=?',(task,)).fetchone()) if task else None,
                  'local_time':datetime.fromtimestamp(now).astimezone().isoformat(),
                  'preferences':{k:planning.setting(db,k) for k in ('mode','hours','workdays','goal','notification_gap')},

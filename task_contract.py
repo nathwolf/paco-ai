@@ -4,7 +4,7 @@ import uuid
 from urllib.parse import urlsplit
 
 TASK_FIELDS = {'title','description','status','priority','urgent','project_id','assignee','deadline',
-               'remind_at','estimate_minutes','goal','parent_id','dependencies','tags','source_url'}
+               'remind_at','estimate_minutes','goal','parent_id','dependencies','tags','source_url','intake_status','responsibility','duplicate_of'}
 STATES = {'open','done','blocked','archived','cancelled'}
 
 
@@ -17,13 +17,19 @@ def clean_task(data, partial=False):
     if not isinstance(data,dict) or set(data)-TASK_FIELDS:
         raise ValueError('Unknown task fields; only structured task data is accepted')
     defaults=dict(title='',description='',status='open',priority=3,urgent=False,project_id=None,assignee='',
-                  deadline=None,remind_at=None,estimate_minutes=30,goal='',parent_id=None,dependencies=[],tags=[],source_url='')
+                  deadline=None,remind_at=None,estimate_minutes=30,goal='',parent_id=None,dependencies=[],tags=[],source_url='',intake_status='accepted',responsibility='execute',duplicate_of=None)
     out={} if partial else defaults
     for key,value in data.items():
         if key in ('title','description','assignee','goal','source_url'):
             limit={'title':500,'description':6000,'assignee':120,'goal':1000,'source_url':2000}[key]
             if not isinstance(value,str) or len(value)>limit:raise ValueError('Invalid '+key)
             out[key]=value.strip()
+        elif key=='intake_status':
+            if not isinstance(value,str) or value not in ('accepted','suggested','reference','dismissed','duplicate'):raise ValueError('Invalid intake status')
+            out[key]=value
+        elif key=='responsibility':
+            if not isinstance(value,str) or value not in ('execute','review','decide','follow_up','informed'):raise ValueError('Invalid responsibility')
+            out[key]=value
         elif key=='status':
             if not isinstance(value,str) or value not in STATES:raise ValueError('Invalid status')
             out[key]=value
@@ -36,7 +42,7 @@ def clean_task(data, partial=False):
         elif key in ('deadline','remind_at'):
             if value is not None and (type(value) not in (float,int) or not math.isfinite(value) or value<0 or value>32503680000):raise ValueError('Invalid timestamp')
             out[key]=value
-        elif key in ('project_id','parent_id'):
+        elif key in ('project_id','parent_id','duplicate_of'):
             out[key]=identifier(value) if value else None
         elif key=='dependencies':
             if not isinstance(value,list) or len(value)>80:raise ValueError('Invalid dependencies')

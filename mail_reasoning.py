@@ -14,7 +14,7 @@ the mailbox owner wrote the message. Extract concrete work the owner owes, inclu
 indirect requests and dependencies. A CC, an FYI, someone else's promise, a quoted
 message, or a question addressed to someone else alone is insufficient. Check later
 messages for delivery, reassignment and cancellation before adding anything. If
-ownership is unclear, omit it. Distinguish an update about work from actual completion.
+ownership is unclear, omit it. Consult project_briefs for goals, scope and each person’s role; a manager is not automatically the executor of team work. Distinguish an update about work from actual completion.
 Return a JSON object with an actions array. For each new outstanding action return
 {"kind":"add","title":"specific next action","message":"message id","quote":"short exact substring"}.
 For an existing task explicitly fulfilled or cancelled return
@@ -24,7 +24,7 @@ tasks alone, including manually completed tasks. For waiting requests supplied i
 waiting array, a substantive answer from the expected recipient may return
 {"kind":"answered","waiting":"waiting id","message":"message id","quote":"exact answer"}.
 An automated reply, acknowledgement, or promise to answer later is not an answer.
-Empty actions is valid. Never invent evidence."""
+For adds, also return responsibility: execute, review, decide, follow_up, or informed. Use the project roles to distinguish doing work from overseeing it. Empty actions is valid. Never invent evidence."""
 
 
 class VisibleText(HTMLParser):
@@ -125,14 +125,23 @@ def initialize(db):
     db.executescript("""
         CREATE TABLE IF NOT EXISTS mail_revision(thread TEXT PRIMARY KEY, version TEXT);
         CREATE TABLE IF NOT EXISTS mail_task(thread TEXT, message TEXT, quote TEXT,
-            task INTEGER PRIMARY KEY, UNIQUE(thread,message,quote));
+            task INTEGER NOT NULL, PRIMARY KEY(thread,message,quote));
         CREATE TABLE IF NOT EXISTS mail_retry(thread TEXT PRIMARY KEY, retry_at REAL);
         CREATE TABLE IF NOT EXISTS mail_resolution(task INTEGER, message TEXT, quote TEXT);
     """)
 
+    # Several source messages can refer to the same canonical obligation.
+    if any(row['name']=='task' and row['pk'] for row in db.execute('PRAGMA table_info(mail_task)')):
+        with db:
+            db.execute('ALTER TABLE mail_task RENAME TO mail_task_legacy')
+            db.execute('CREATE TABLE mail_task(thread TEXT,message TEXT,quote TEXT,task INTEGER NOT NULL,PRIMARY KEY(thread,message,quote))')
+            db.execute('INSERT INTO mail_task SELECT * FROM mail_task_legacy')
+            db.execute('DROP TABLE mail_task_legacy')
+
 
 def analyze(db, thread, settings, owner, predict=infer):
-    import workflows
+    import workflows, attention
+    with db:attention.add_identities(db,[owner])
     tid = owner + "/" + thread["id"]
     version = thread["historyId"]
     if db.execute("SELECT 1 FROM mail_revision WHERE thread=? AND version=?", (tid, version)).fetchone():
@@ -141,7 +150,8 @@ def analyze(db, thread, settings, owner, predict=infer):
     existing = [dict(row) for row in db.execute("""SELECT t.id,t.title,t.state,m.message
         FROM mail_task m JOIN task t ON t.id=m.task WHERE m.thread=?""", (tid,))]
     waiting=[dict(r) for r in db.execute("SELECT * FROM waiting WHERE status='waiting'") if r['thread']==thread['id'] or r['thread'].rstrip('/').endswith('/'+thread['id'])]
-    result = predict(settings, {"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting}) if msgs else {"actions":[]}
+    import project_brains
+    result = predict(settings, {"project_briefs":project_brains.context(db),"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting}) if msgs else {"actions":[]}
     actions = result["actions"]
     if not isinstance(actions, list):
         raise ValueError("invalid actions")
@@ -181,9 +191,15 @@ def analyze(db, thread, settings, owner, predict=infer):
                                   (title, time.time())).lastrowid
                 db.execute("INSERT INTO mail_task VALUES(?,?,?,?)", (tid, mid, quote, task))
                 db.execute('INSERT OR IGNORE INTO ownership VALUES(?,?,?)',(task,owner,msgs[positions[mid]].get('sender') or ''))
+                kind=action.get('responsibility','execute')
+                if not isinstance(kind,str) or kind not in attention.KINDS:raise ValueError('Invalid responsibility')
+                canonical=attention.candidate(db,task,'gmail',kind=kind)
+                if kind=='informed' and canonical==task:attention.record(db,task,'reference','Information rather than an obligation','gmail',kind)
+                if canonical==task and attention.self_commitment(quote,msgs[positions[mid]].get('sent')):
+                    attention.record(db,task,'accepted','Your explicit commitment in a sent message','gmail',kind)
                 workflows.remember(db,'gmail',tid+'/'+mid+'/'+quote,quote,
                                    'https://mail.google.com/mail/u/0/#all/'+thread['id'],
-                                   msgs[positions[mid]].get('sender') or '',task=task)
+                                   msgs[positions[mid]].get('sender') or '',task=canonical)
             else:
                 raise ValueError("unknown operation")
         db.execute("INSERT OR REPLACE INTO mail_revision VALUES(?,?)", (tid, version))
