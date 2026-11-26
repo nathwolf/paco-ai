@@ -431,3 +431,20 @@ configured model and existing source permissions, checks fresh source context, a
 leaves items for review when a source is unavailable or evidence is insufficient.
 Acceptance makes an item eligible for the normal reminder schedule; focus and quiet-time
 protection still apply. It does not send a notification for every newly accepted task.
+
+### Combining related work and recognizing completion
+
+Paco checks task relationships in the background using the configured model and source
+permissions. It can merge strongly supported duplicates across sources, or checklist
+steps linked to the same calendar event. Different people, project roles, deadlines,
+occurrences, or dependent milestones stay separate. Manual merges become examples for
+future matching; automatic merges do not train themselves. A merge preserves checklist
+text, email/calendar/message links and a local audit, and archives the duplicate.
+
+For tasks linked to email, Paco also searches later messages outside the original thread
+for evidence of completion. It checks a small batch every five minutes and revisits
+unchanged tasks after six hours. Search is bounded to relevant results, not an exhaustive
+mailbox audit. A clear, later confirmation of the whole obligation can mark it done;
+account access, future promises, another person's work and partial checklist progress do
+not. Explicitly completed work can also prove a necessary earlier step for the same obligation; it does not prove unrelated steps or unverified parts of a broader checklist. Exact completion evidence stays local. Your explicit completion or later reopening
+wins. Cancelled calendar entries alone never prove a task was completed.

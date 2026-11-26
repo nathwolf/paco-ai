@@ -258,6 +258,12 @@ def worker(path, connect, stop):
         import responsibility
         with closing(connect(path)) as db:
             responsibility.review(db,settings())
+    def reconcile_obligations():
+        import task_relationships,task_completion
+        config=settings().get('model')
+        with closing(connect(path)) as db:
+            task_relationships.reconcile(db,config)
+            task_completion.review(db,config)
     def calendar_actions():
         import calendar_tasks
         with closing(connect(path)) as db:
@@ -326,7 +332,7 @@ def worker(path, connect, stop):
     current_mattermost=lambda:settings().get('connectors',{}).get('mattermost')
     threading.Thread(target=mattermost_events.listen,args=(stop,chat_wake,current_mattermost,gate,report),daemon=True).start()
     threading.Thread(target=run_loop,args=('Mattermost chat',stop,30,mattermost_chat,report,gate,chat_wake),daemon=True).start()
-    for name,interval,step in (('responsibility learning',60,admit_responsibilities),('calendar actions',60,calendar_actions),('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
+    for name,interval,step in (('task relationships',300,reconcile_obligations),('responsibility learning',60,admit_responsibilities),('calendar actions',60,calendar_actions),('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
         threading.Thread(target=run_loop,args=(name,stop,interval,step,report,gate),daemon=True).start()
     try:
         run_loop('reminders',stop,TICK_INTERVAL,reminders,report,gate)

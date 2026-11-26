@@ -133,15 +133,8 @@ def undo(db, ident):
 
 
 def merge(db, keep, other):
-    if keep == other:
-        raise ValueError('Choose two different tasks')
-    with db:
-        if db.execute('SELECT count(*) FROM task WHERE id IN (?,?)',(keep,other)).fetchone()[0] != 2:
-            raise ValueError('Unknown task')
-        # Explicit user correction only; similar wording is never enough for an automatic merge.
-        db.execute('UPDATE evidence SET task=? WHERE task=?',(keep,other))
-        db.execute("UPDATE task SET state='archived' WHERE id=?",(other,))
-        changed(db,'task.merged',{'keep':keep,'other':other})
+    import task_relationships
+    return task_relationships.merge(db,keep,other)
 
 
 def import_meeting(db, data):
