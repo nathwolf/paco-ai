@@ -1,0 +1,7 @@
+{
+  "friendly": {"label": "Friendly", "file": "paco-friendly-v1-384.png", "when": "Ready to start"},
+  "impatient": {"label": "Impatient", "file": "paco-impatient-v1-384.png", "when": "Waiting a while"},
+  "angry": {"label": "Angry", "file": "paco-angry-v1-384.png", "when": "Urgent"},
+  "furious": {"label": "Furious", "file": "paco-furious-v1-384.png", "when": "Urgent, a day late"},
+  "rage": {"label": "Red rage", "file": "paco-red-rage-luma-v1-384.png", "when": "Urgent, 3+ days late"}
+}

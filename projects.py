@@ -1,8 +1,6 @@
 """Read-only project context and assigned Linear issues."""
-import json
 from pathlib import Path
 import subprocess
-import time
 
 LINEAR = """query Assigned($after: String) {
   viewer { id assignedIssues(first: 50, after: $after) {

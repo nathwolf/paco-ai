@@ -1,0 +1,137 @@
+/* Paco — settings & meeting notes. One rounded family, parrot-derived colour, pressable buttons. */
+:root{
+  --ink:#1F3326;        /* cap green: text and headings */
+  --text:#33463A;
+  --muted:#5E6B62;
+  --page:#FFFFFF;
+  --tint:#F4F8F0;       /* fields, insets */
+  --line:#DDE5D6;       /* 2px structure lines */
+  --leaf:#2D8511;  --leaf-edge:#1F5F0B;  --leaf-soft:#E7F5DD; --on-leaf:#FFFFFF;
+  --sky:#0E7CC0;   --sky-edge:#0A5C8F;   --sky-soft:#E3F2FB; --sky-text:#1278AE;
+  --alarm:#DE3324; --alarm-edge:#A82217; --alarm-soft:#FDE8E5; --alarm-text:#C3301F;
+  --beak:#FFB020;  --beak-text:#A85800;  --beak-soft:#FFF3DB;
+  --bubble:#FFFFFF;
+  --field:#F7FAF4;
+  --font:ui-rounded,"SF Pro Rounded","Nunito",system-ui,-apple-system,sans-serif;
+  color-scheme:light dark;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ink:#F2F8EE; --text:#DCE6D7; --muted:#A3B2A8; --page:#13201A; --tint:#1A2A21; --line:#2F4437;
+    --leaf:#58C22C; --leaf-edge:#2E7612; --leaf-soft:#1E3A1A; --on-leaf:#0C1D06;
+    --sky:#2A9BE0; --sky-edge:#1A6FA6; --sky-soft:#14324A; --sky-text:#6CC4F5;
+    --alarm:#E5483A; --alarm-edge:#A82217; --alarm-soft:#3D1E1A; --alarm-text:#FF8A7E;
+    --beak:#FFB020; --beak-text:#FFC75A; --beak-soft:#3A2D12;
+    --bubble:#1A2A21; --field:#182519;
+  }
+}
+*{box-sizing:border-box}
+html{background:var(--page)}
+body{margin:0;font:600 14px/1.5 var(--font);color:var(--text);background:var(--page);-webkit-font-smoothing:antialiased}
+[hidden]{display:none!important}
+::selection{background:var(--leaf);color:#fff}
+
+/* Header: Paco speaks first. */
+header{display:flex;align-items:flex-end;gap:14px;padding:26px 28px 20px;max-width:680px;margin:0 auto}
+header>img{width:76px;height:76px;flex:none}
+.speech{position:relative;flex:1;background:var(--bubble);border:2px solid var(--line);border-radius:18px;padding:12px 16px;margin-bottom:6px}
+.speech::before{content:"";position:absolute;left:-11px;bottom:18px;width:18px;height:18px;background:var(--bubble);border-left:2px solid var(--line);border-bottom:2px solid var(--line);transform:rotate(45deg);border-bottom-left-radius:4px}
+.speech h1{font-size:20px;font-weight:800;color:var(--ink);margin:0 0 2px;letter-spacing:-.2px}
+.speech p{margin:0;color:var(--muted);font-size:13px}
+header>a{align-self:flex-start;margin-left:auto;font-weight:800;color:var(--sky-text);text-decoration:none}
+#saved{position:fixed;top:14px;right:18px;z-index:9;background:var(--leaf);color:var(--on-leaf);font-weight:800;font-size:12px;border-radius:12px;padding:6px 12px;box-shadow:0 3px 0 var(--leaf-edge)}
+#saved:empty{display:none}
+
+main{max-width:680px;margin:0 auto;padding:0 28px 32px}
+section{padding:22px 0;border-top:2px solid var(--line)}
+section:first-of-type{border-top:0}
+h2{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:800;color:var(--ink);margin:0 0 12px;letter-spacing:-.2px}
+h2 .hint{font-weight:600;margin-left:auto}
+.icon{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:10px;flex:none;color:#fff}
+.icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.icon.sky{background:var(--sky)} .icon.leaf{background:var(--leaf)} .icon.beak{background:var(--beak);color:#3D2400} .icon.alarm{background:var(--alarm)} .icon.ink{background:var(--ink);color:var(--page)}
+.hint,small{font-size:12px;line-height:1.55;color:var(--muted);font-weight:600}
+p{margin:8px 0}
+a{color:var(--sky-text);font-weight:800}
+
+/* Controls */
+input,select,textarea,button{font:inherit}
+input:not([type=checkbox]),select,textarea{width:100%;border:2px solid var(--line);border-radius:12px;background:var(--field);color:var(--ink);padding:9px 12px;margin-bottom:10px;font-weight:700}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:1;font-weight:600}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px var(--sky-soft)}
+textarea{resize:vertical;line-height:1.5}
+label{font-weight:700;color:var(--text)}
+input[type=checkbox]{appearance:none;-webkit-appearance:none;width:22px;height:22px;flex:none;margin:0;border:2px solid var(--line);border-radius:7px;background:var(--field);display:inline-grid;place-items:center;cursor:pointer;vertical-align:middle}
+input[type=checkbox]::after{content:"";width:6px;height:11px;border:solid var(--on-leaf);border-width:0 3px 3px 0;transform:rotate(45deg) translate(-1px,-1px);opacity:0}
+input[type=checkbox]:checked{background:var(--leaf);border-color:var(--leaf-edge)}
+input[type=checkbox]:checked::after{opacity:1}
+input[type=checkbox]:focus-visible{outline:3px solid var(--sky-soft);outline-offset:1px}
+
+/* The pressable button. White with a grey edge by default; filled variants for the one main action. */
+button{appearance:none;cursor:pointer;border:2px solid var(--line);border-radius:12px;background:var(--page);color:var(--sky-text);padding:8px 14px;font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.3px;box-shadow:0 4px 0 var(--line);margin-bottom:4px;white-space:nowrap;transition:transform .05s,box-shadow .05s}
+button:hover{background:var(--tint)}
+button:active{transform:translateY(4px);box-shadow:0 0 0 var(--line)}
+button:focus-visible{outline:3px solid var(--sky);outline-offset:3px}
+button:disabled{opacity:.55;cursor:wait;transform:none}
+button.primary,#finish{background:var(--leaf);border-color:var(--leaf);color:var(--on-leaf);box-shadow:0 4px 0 var(--leaf-edge)}
+button.primary:hover,#finish:hover{background:var(--leaf);filter:brightness(1.06)}
+button.primary:active,#finish:active{box-shadow:0 0 0 var(--leaf-edge)}
+button.quiet{color:var(--muted)}
+button.danger{color:var(--alarm-text)}
+:not(.row,.expressions,.days,.quick,.segment-head)>button+button{margin-left:8px}
+.row{display:flex;align-items:center;gap:10px}
+.row>*{min-width:0}
+.row input,.row select{flex:1;margin-bottom:0}
+.row label{display:flex;gap:8px;align-items:center}
+.row label input{width:72px;margin:0}
+
+/* Sources: one row per connection, state on the row. */
+.source{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:2px solid var(--tint)}
+.source>span{font-weight:800;color:var(--ink);font-size:15px}
+.source small{display:block;font-weight:600}
+.source .state{display:inline-block;margin-top:4px;font-weight:800;font-size:12px;color:var(--leaf);background:var(--leaf-soft);border-radius:8px;padding:1px 8px}
+.source .state:empty{display:none}
+.source .state.problem,.problem{color:var(--alarm-text);background:var(--alarm-soft)}
+#source-status p{display:inline-block;margin:8px 6px 0 0;padding:2px 9px;border-radius:8px;background:var(--leaf-soft);color:var(--leaf);font-weight:800;font-size:12px}
+#source-status p.problem{background:var(--alarm-soft);color:var(--alarm-text)}
+details{margin-top:14px}
+summary{cursor:pointer;color:var(--sky-text);font-weight:800;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+";display:inline-grid;place-items:center;width:20px;height:20px;margin-right:8px;border-radius:6px;background:var(--sky-soft);color:var(--sky-text);font-weight:900}
+details[open]>summary::before{content:"−"}
+details form{margin-top:12px}
+details.agent{padding:20px 0;border-top:2px solid var(--line);margin:0}
+
+fieldset{border:0;padding:0;margin:6px 0 12px}
+legend{font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:700}
+fieldset label,.login{display:flex;align-items:center;gap:10px;margin:8px 0}
+
+/* Working days as toggle pills. */
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:12px 0 16px}
+.days label{position:relative;display:grid;place-items:center;height:40px;border:2px solid var(--line);border-radius:12px;box-shadow:0 3px 0 var(--line);font-weight:800;font-size:13px;color:var(--muted);cursor:pointer;user-select:none}
+.days label input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0}
+.days label:has(input:checked){background:var(--leaf-soft);border-color:var(--leaf);color:var(--leaf);box-shadow:0 3px 0 var(--leaf)}
+.days label:has(input:focus-visible){outline:3px solid var(--sky);outline-offset:2px}
+
+/* Expressions: pressable tiles. */
+.expressions{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.expressions button{display:block;text-transform:none;letter-spacing:0;padding:8px 6px 10px;color:var(--ink);font-size:13px;white-space:normal;line-height:1.25}
+.expressions img{display:block;width:100%;aspect-ratio:1;object-fit:contain;margin-bottom:6px}
+.expressions small{display:block;font-size:11px}
+
+/* More of Paco */
+.more{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text);padding:12px 14px;border:2px solid var(--line);border-radius:16px;box-shadow:0 4px 0 var(--line);margin:0 0 12px}
+.more:hover{background:var(--tint)}
+.more b{display:block;font-weight:800;color:var(--ink);font-size:15px}
+.more .hint{display:block}
+
+.last{border-top:2px solid var(--line)}
+#finish{width:100%;padding:13px;font-size:15px;margin-top:12px}
+#readiness{color:var(--beak-text);font-weight:800}
+#notice{position:sticky;top:10px;z-index:5;padding:11px 14px;border:2px solid var(--beak);border-radius:14px;background:var(--beak-soft);color:var(--ink);font-weight:700;margin:12px 0}
+.intro{display:none}
+@media (max-width:520px){header{padding:18px 16px}main{padding:0 16px 24px}.expressions{grid-template-columns:repeat(3,1fr)}}
+@media (prefers-reduced-motion:reduce){button{transition:none}button:active{transform:none}}
+#judge-state.problem{padding:7px 11px;border-radius:10px;font-weight:700}
+
+#projects label[for="focus-project"]{display:block;margin-top:22px;padding-top:16px;border-top:2px solid var(--line)}

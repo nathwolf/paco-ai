@@ -13,4 +13,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - run: python -m pip install -r server/requirements.txt
       - run: python -m unittest discover -v
+      - run: python eval_workweek.py
+      - run: node --check web/app.js
+      - run: node --check web/setup.js
+      - run: node --check web/meetings.js
+      - run: node --check web/workspace.js
+      - run: node --check web/embedded.js
+      - run: node --check extensions/meet-speakers/content.js
+      - run: node --check extensions/meet-speakers/worker.js
+      - run: node --check extensions/meet-speakers/popup.js
+      - run: node extensions/meet-speakers/test-content.cjs
+      - if: runner.os == 'macOS'
+        run: python build_app.py
+      - if: runner.os == 'macOS'
+        run: |
+          xcrun clang -mmacosx-version-min=14.2 -fobjc-arc -fmodules native/MeetingSpeakers.m native/MeetingSpeakersTests.m -framework Cocoa -framework ApplicationServices -o /tmp/paco-speaker-tests
+          /tmp/paco-speaker-tests

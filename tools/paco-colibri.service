@@ -1,0 +1,19 @@
+[Unit]
+Description=Paco private activity model (existing Colibri / Qwen)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/ai/colibri
+Environment=OMP_NUM_THREADS=16
+Environment=COLI_DEBUG=0
+ExecStart=/home/ubuntu/ai/colibri/.venv/bin/python -u c/coli serve --model /home/ubuntu/ai/models/qwen36 --host 127.0.0.1 --port 8766 --model-id tello-dev-qwen --ctx 8192 --cap 256 --ngen 256 --no-think --max-queue 2 --queue-timeout 30
+Restart=on-failure
+RestartSec=10
+MemoryMax=48G
+CPUQuota=1600%
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

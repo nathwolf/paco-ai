@@ -36,4 +36,5 @@ class MailTest(unittest.TestCase):
             self.assertEqual(db.execute("SELECT state FROM task").fetchone()[0], "open")
             predict.return_value = {"actions":[close]}
             self.assertTrue(run())
-            self.assertEqual(db.execute("SELECT state FROM task").fetchone()[0], "done")
+            self.assertEqual(db.execute("SELECT state FROM task").fetchone()[0], "open")
+            self.assertEqual(db.execute("SELECT outcome FROM source_event").fetchone()[0], "suggested_completion")

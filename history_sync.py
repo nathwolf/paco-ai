@@ -1,6 +1,4 @@
 """Durable Gmail history cursor with bounded bootstrap and replayable work."""
-import time
-from urllib.parse import quote
 
 
 def update(db, get, owner, profile_version):

@@ -1,6 +1,6 @@
 import unittest
 import tempfile
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 from pathlib import Path
 from contextlib import closing
 import subprocess

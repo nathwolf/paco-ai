@@ -1,0 +1,14 @@
+{
+  "title": "Example: indirect commitments and a handoff",
+  "kind": "planning",
+  "segments": [
+    {"speaker":"Ana","seconds":0,"text":"The client still needs the revised proposal. Can someone pick it up?"},
+    {"speaker":"Juan","seconds":8,"text":"Leave it with me, once finance approves the figures."},
+    {"speaker":"Ana","seconds":15,"text":"Great, thanks. Nathalia, could you chase that approval?"},
+    {"speaker":"Nathalia","seconds":24,"text":"Sure, I will ask finance this afternoon."},
+    {"speaker":"Juan","seconds":33,"text":"Actually, I am away tomorrow. Ana, can you send the proposal instead?"},
+    {"speaker":"Ana","seconds":41,"text":"Yes, once the numbers are approved."},
+    {"speaker":"Nathalia","seconds":52,"text":"We could also redesign the dashboard someday, but it is only an idea. Let's keep that out of this week's work."},
+    {"speaker":"Juan","seconds":66,"text":"And the old export bug? That's already fixed. No follow-up needed."}
+  ]
+}

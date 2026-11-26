@@ -1,0 +1,9 @@
+# Import into the existing OVH Caddy configuration. Port 80 belongs to another app.
+https://paco.optimai.cl {
+    tls {
+        issuer acme {
+            disable_http_challenge
+        }
+    }
+    reverse_proxy 127.0.0.1:8765
+}

@@ -1,52 +1,97 @@
-# Discover tasks on macOS
+# Connect sources and local agents
 
-Use a persistent Python virtual environment. For Google, install the OAuth client and macOS Keychain support into the same interpreter used to install the login service:
-
-```sh
-python3 -m venv ~/.paco-venv
-source ~/.paco-venv/bin/activate
-python -m pip install google-auth-oauthlib keyring requests
-```
-
-For GitHub, install GitHub CLI, run `gh auth login`, then `python paco.py connect github`. Paco reads open issues assigned to that login across accessible repositories.
-
-For Google, enable Gmail, Calendar and Tasks APIs in one Google Cloud project. Create a Desktop OAuth client, download its JSON, and authorize the desired account:
+Use the same Python 3.11+ environment for setup and the desktop app:
 
 ```sh
-python paco.py connect google --client ~/Downloads/client_secret.json
-python paco.py connect model ollama YOUR_INSTALLED_MODEL
-python paco.py sync
-python paco.py list
-python paco.py install
+.venv/bin/python -m pip install -r requirements.txt
 ```
 
-Connect either provider independently. Re-run install to update an older service. The service polls every five minutes. It discovers open Google Tasks and upcoming timed primary-calendar meetings. Gmail starts with incoming and outgoing threads active in the last seven days, then follows mailbox history using a durable cursor and queue, without a phrase filter. It analyzes up to four changed threads per cycle, using up to twelve recent messages and 4,500 characters of body text per message. Attachments are excluded. A later reply can resolve an existing task when the model identifies supporting text. Check inferred tasks: a valid quotation does not guarantee the model understood it.
+## Google
 
-Start Ollama and install a chat model that supports JSON output before selecting the local option. Alternatively run `python paco.py connect model openai YOUR_MODEL --allow-cloud-mail` and enter the API key at the hidden prompt. This explicitly permits sending thread excerpts, sender and recipient details, and existing same-thread tasks to OpenAI. Credentials are stored through keyring. Re-run install after updating the checkout. Reminders continue independently while the sync worker waits for a model.
-
-To check a configured model's judgment on synthetic conversations, run `python eval_mail.py`. No personal email is used in this evaluation.
-
-## Planning and desktop controls
-
-Run `python paco.py desktop` with a Python installation that includes Tk. Closing the window leaves the installed service running. You can start a focus session, snooze, block, resume or complete the selected task. Use `python paco.py plan` to see eligible tasks and their ranking. Meeting and focus protection apply to notifications as well as the plan. Demo configuration:
+Enable Gmail, Calendar, Tasks and Drive APIs in a Google Cloud project. Create a Desktop OAuth client and download its JSON. The default scopes are read-only.
 
 ```sh
-python paco.py set hours 9-18
-python paco.py set goal "Paid mining pilot"
-python paco.py estimate 1 45 --goal "Paid mining pilot" --deadline 2027-01-08T17:00
-python paco.py set language es
-python paco.py set voice on
-python paco.py review
+.venv/bin/python paco.py connect google --client ~/Downloads/client_secret.json
+.venv/bin/python paco.py connect model anthropic YOUR_MODEL_ID --allow-cloud-mail
+.venv/bin/python paco.py sync
 ```
 
-Review summarizes seven days of recorded actions. Two snoozes of the same task prompt Paco to suggest a five-minute first step. Estimated tasks must fit before the next known timed meeting. Unestimated tasks remain eligible.
+The API-key prompt is hidden. The same seven choices as Settings work here (see [Models](#models)); for example `connect model ollama qwen3:8b`, `connect model private MODEL --endpoint http://localhost:1234/v1`, `connect model claude_code --allow-cloud-mail`, or `connect model bedrock MODEL_ID --region us-east-1 --allow-cloud-mail`. Local models need no `--allow-cloud-mail`. Hosted processing of other categories is enabled individually in desktop Settings. Existing configurations without explicit category consent need to be saved again.
 
-## Project sources and actions
+Gmail starts with recent incoming/outgoing threads, then uses a durable history cursor. Up to four changed threads are analyzed each cycle. Quotes ground new tasks and completion suggestions, but cannot prove a model understood the conversation; completions require review. Tracked waiting-for requests can be resolved by grounded substantive replies from the expected sender. Recognized automated replies do not stop their timer. Follow-up drafts are saved locally and sent manually in the source application.
 
-Enable the Drive API and reconnect Google to authorize metadata access. Run `python paco.py activity` for recent Drive files and the latest commit in each explicitly tracked repo. Add a repo with `python paco.py track /absolute/path/to/repo`. For assigned Linear issues, install requests and keyring in the service environment and run `python paco.py connect linear`. Enter a personal read-only API key at the prompt.
+Primary Google Calendar is the default. To select multiple calendars, set the `calendars` array in `~/Library/Application Support/Paco/sources.json` to their IDs. Explicit Google `outOfOffice` events protect time off. Timed meetings protect focus. Calendar conflicts and join/source links appear in Today.
 
-For an assigned GitHub issue, `python paco.py draft-comment TASK_ID "text"` saves a local draft. Use `python paco.py publish DRAFT_ID` to review the target and text and explicitly approve posting. An uncertain delivery is checked for its receipt before another attempt. Read-only GitHub credentials can still be used for discovery.
+To enable Google event moves, reconnect with **`--calendar-write`**. A proposed move shows the new time and attendees, then requires **Approve move & notify attendees**. The event's ETag is rechecked before writing. An uncertain write is not retried automatically. Apple events are read-only.
 
-Inspect the source and stored supporting quotes with `python paco.py evidence TASK_ID`.
+## Other sources
 
-Use `python paco.py depends TASK PREREQUISITE` to withhold a task until its prerequisite is complete. Both IDs must already exist. Paco rejects cycles. Remove a dependency with `python paco.py unlink TASK PREREQUISITE`.
+GitHub uses the account authenticated in `gh` and checks its identity before polling. Connect in Settings or run `paco.py connect github`. GitHub requested reviews are also imported. Disappearing assignments become unavailable, retaining identity and history. A positive provider completion may satisfy dependencies; disappearance alone cannot. When an open item disappears from a task tracker (GitHub, GitLab, Linear, Jira, Asana, Todoist, Microsoft To Do, Google Tasks, Apple Reminders), Paco stops reminding and asks in the workspace whether you finished it.
+
+Linear can be connected in Settings or with `paco.py connect linear`. Drive metadata and explicitly tracked local Git repositories remain available through the CLI:
+
+```sh
+.venv/bin/python paco.py track /absolute/path/to/repo
+.venv/bin/python paco.py activity
+```
+
+Additional desktop adapters use independently entered tokens stored in Keychain:
+
+| Source | Read behavior | Token / limits |
+| --- | --- | --- |
+| Slack | Recent DMs and mentions as searchable evidence; review before creating tasks | User token with `search:read`; source account is workspace/user |
+| GitLab | Open issues assigned to you and merge requests awaiting your review (`Review: …`) | Personal access token with `read_api`; optional `https://gitlab.example.com` for self-hosted |
+| Linear | Your assigned, unfinished issues | Personal API key |
+| Outlook | Flagged messages | Microsoft Graph OAuth bearer token with appropriate delegated mail/profile access; manual reconnect on expiry |
+| Outlook Calendar | Next seven days of meetings: busy time, Teams/online join links, attendees, “Prepare for …” tasks | Graph token with `Calendars.Read`; cancelled, declined and all-day events are skipped; “free” events don’t block time |
+| Microsoft To Do | Unfinished tasks in all your lists | Graph token with `Tasks.Read` |
+| Jira Cloud | Issues assigned to the authenticated user | OAuth bearer token and `https://your-team.atlassian.net` site |
+| Asana | Incomplete assigned tasks in the user's workspaces | Personal/OAuth access token |
+| Todoist | Open tasks | Personal/OAuth access token |
+| Apple Reminders | Incomplete reminders | Explicit macOS Reminders permission |
+| Apple Calendar | Timed events and busy intervals | Explicit macOS Calendar permission |
+
+Every task keeps a link back to its source (issue, email thread, meeting join link, Apple app), shown as **Open** in banners. These adapters do not yet implement completion write-back. Their fixture tests are not proof of successful live authentication or organization-specific permissions.
+
+## Models
+
+Choose in **Settings → Model** (with **Test connection**) or with `paco.py connect model`:
+
+| Provider | Setup | Notes |
+| --- | --- | --- |
+| `ollama` | `ollama pull qwen3:8b`, then the model name | Local; needs no data permissions |
+| `private` | Any OpenAI-compatible `/v1` server: LM Studio, llama.cpp `llama-server`, vLLM, LiteLLM | `http://` only for localhost (counts as local); remote servers need `https://`. Optional key |
+| `claude_code` | `npm i -g @anthropic-ai/claude-code`, run `claude` once to sign in | Uses your Claude subscription. Runs `claude -p` with no tools, one turn, in an empty temp folder; API-key environment variables are removed so the subscription is used |
+| `codex_cli` | Install Codex, run `codex login` | Uses your ChatGPT plan. Runs `codex exec` in a read-only sandbox in an empty temp folder |
+| `anthropic` | API key from console.anthropic.com | |
+| `bedrock` | Region and a Bedrock API key; model or inference-profile ID copied from the Bedrock console | Uses the Converse API. IAM access keys / SigV4 profiles are not supported yet |
+| `openai` | API key | |
+
+Hosted choices only receive the categories you tick. Meeting summaries can use a separate model (Meeting notes → preferences).
+
+## Local agent sessions
+
+Connect the executable and a trusted Git repository in Settings. The reviewable brief identifies the base commit, whether uncommitted changes are omitted, the objective, and acceptance requirements. Session events expose tool availability, progress, permission denials, and results. Follow-ups use the recorded provider session ID, never an implicit “last session.” Restart blocks uncertain sessions rather than duplicating an action. Cancellation targets the process group and PID identity is checked when recovering an existing process.
+
+Local-agent permissions are independent of an API model connection. Some required approvals must still be completed in the provider's own interface. The bridge does not grant blanket permissions or automatically enable tools.
+
+## Scoped local MCP
+
+Grant only the scopes a named local client needs:
+
+```sh
+.venv/bin/python paco.py mcp-grant my-agent tasks.read memory.read sessions.read
+.venv/bin/python paco.py mcp --client my-agent
+```
+
+Configure the latter command as a local stdio MCP server in your agent. Add `tasks.write` only when the agent should create or edit Paco tasks. Revoke all scopes with `paco.py mcp-grant my-agent`. Each call checks the current grant; the tool list also reflects it. The protocol exposes tasks, cited memory/context packs, session status and change-cursor polling. Push subscriptions and an independent external-MCP operation broker remain unfinished.
+
+## Local state
+
+`tasks.sqlite3` contains tasks, citations, drafts, preferences, agent session metadata and history. `sources.json` contains source settings without API secrets. Do not commit either file. Desktop exports show stored evidence and preferences. Forgetting an item removes its evidence text and tombstones its source identity. Screenshots are not collected. Audio is captured only during meeting notes you start yourself, transcribed in memory and never saved as audio.
+
+The database uses SQLite write-ahead logging, so `tasks.sqlite3-wal` and `tasks.sqlite3-shm` appear beside it. They belong to the database: back up or move all three together, preferably while Paco is quit. Deleting evidence or a transcript also truncates the log.
+
+## Company task service / ChatGPT web
+
+The remote company MCP uses OAuth and a task-only database. This differs from the local MCP's access to Mac context. See [COMPANY.md](COMPANY.md) for the endpoint, account setup, tool catalog, sync behavior and exact privacy boundary.

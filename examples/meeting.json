@@ -1,0 +1,11 @@
+{
+  "id": "sample-planning-2026-11-25",
+  "title": "Pilot planning",
+  "project": "Pilot",
+  "partial": true,
+  "segments": [
+    {"speaker": "Ana", "seconds": 0, "text": "We decided to keep the pilot small: one customer and one workflow."},
+    {"speaker": "Nathalia", "seconds": 25, "text": "I will send the revised scope on Friday."},
+    {"speaker": "Ana", "seconds": 48, "text": "Maybe we could add another dashboard later. That is only an idea for now."}
+  ]
+}

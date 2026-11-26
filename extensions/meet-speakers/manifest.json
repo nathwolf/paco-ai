@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Paco · Meet speaker names",
+  "description": "Sends participant names and speaking indicators to your local Paco meeting. No audio, captions, screenshots or chat.",
+  "version": "0.1.0",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": {"service_worker": "worker.js"},
+  "action": {"default_popup": "popup.html"}
+}

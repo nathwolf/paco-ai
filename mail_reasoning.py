@@ -2,7 +2,6 @@
 import history_sync
 import argparse
 import base64
-import json
 import time
 import sys
 from getpass import getpass
@@ -21,7 +20,11 @@ Return a JSON object with an actions array. For each new outstanding action retu
 For an existing task explicitly fulfilled or cancelled return
 {"kind":"close","task":123,"message":"later evidence message id","quote":"exact substring"}.
 Existing task numbers are valid only inside this thread. Leave existing outstanding
-tasks alone, including manually completed tasks. Empty actions is valid. Never invent evidence."""
+tasks alone, including manually completed tasks. For waiting requests supplied in the
+waiting array, a substantive answer from the expected recipient may return
+{"kind":"answered","waiting":"waiting id","message":"message id","quote":"exact answer"}.
+An automated reply, acknowledgement, or promise to answer later is not an answer.
+Empty actions is valid. Never invent evidence."""
 
 
 class VisibleText(HTMLParser):
@@ -75,39 +78,47 @@ def messages(thread):
         headers = {h["name"].lower(): h["value"] for h in payload["headers"]}
         result.append(dict(id=msg["id"], sent="SENT" in labels, date=msg["internalDate"],
                            sender=headers.get("from"), to=headers.get("to"), cc=headers.get("cc"),
-                           subject=headers.get("subject"), text=body(payload)[:4500]))
+                           subject=headers.get("subject"), text=body(payload)[:4500],
+                           automated=headers.get('auto-submitted','no').lower()!='no' or
+                           headers.get('precedence','').lower() in ('bulk','list','junk') or
+                           bool(headers.get('x-autoreply') or headers.get('x-autorespond'))))
     return result[-12:]
 
 
 def configure(argv):
+    import models
     parser = argparse.ArgumentParser(prog="paco connect model")
-    parser.add_argument("provider", choices=["ollama", "openai"])
-    parser.add_argument("model")
+    parser.add_argument("provider", choices=list(models.PROVIDERS))
+    parser.add_argument("model", nargs="?", default="", help="model ID (optional for claude_code and codex_cli)")
+    parser.add_argument("--endpoint", help="private: OpenAI-compatible base URL, e.g. http://localhost:1234/v1")
+    parser.add_argument("--region", help="bedrock: AWS region, e.g. us-east-1")
+    parser.add_argument("--with-key", action="store_true", help="private: prompt for an API key for your server")
     parser.add_argument("--allow-cloud-mail", action="store_true",
-                        help="allow sending selected Gmail thread text to OpenAI")
+                        help="allow sending selected Gmail thread text to a hosted model")
     opt = parser.parse_args(argv)
-    if opt.provider == "openai":
-        if not opt.allow_cloud_mail:
-            parser.error("hosted mail processing requires --allow-cloud-mail")
+    config = {"provider": opt.provider, "model": opt.model.strip()}
+    if opt.provider not in ("claude_code", "codex_cli") and not config["model"]:
+        parser.error("enter a model ID")
+    try:
+        if opt.provider == "private":
+            config["endpoint"] = models.validate_endpoint(opt.endpoint or "")
+        if opt.provider == "bedrock":
+            config["region"] = models.validate_region(opt.region)
+    except ValueError as error:
+        parser.error(str(error))
+    local = models.is_local(config)
+    if not local and not opt.allow_cloud_mail:
+        parser.error("hosted mail processing requires --allow-cloud-mail")
+    if models.needs_key(opt.provider) or (opt.provider == "private" and opt.with_key):
         import keyring
-        keyring.set_password("paco.model", "openai", getpass("OpenAI API key: "))
-    return {"provider": opt.provider, "model": opt.model}
+        keyring.set_password("paco.model", opt.provider, getpass(opt.provider + " API key: "))
+    config["allowed_sources"] = ["gmail"] if opt.allow_cloud_mail and not local else []
+    return config
 
 
 def infer(config, conversation):
-    import requests
-    headers = {}
-    url = "http://127.0.0.1:11434/v1/chat/completions"
-    if config["provider"] == "openai":
-        import keyring
-        url = "https://api.openai.com/v1/chat/completions"
-        headers["Authorization"] = "Bearer " + keyring.get_password("paco.model", "openai")
-    response = requests.post(url, headers=headers, timeout=45, json={
-        "model": config["model"], "response_format": {"type": "json_object"},
-        "messages": [{"role": "system", "content": PROMPT},
-                     {"role": "user", "content": json.dumps(conversation, ensure_ascii=False)}]})
-    response.raise_for_status()
-    return json.loads(response.json()["choices"][0]["message"]["content"])
+    import models
+    return models.complete(config, PROMPT, conversation, "gmail")[0]
 
 
 def initialize(db):
@@ -121,6 +132,7 @@ def initialize(db):
 
 
 def analyze(db, thread, settings, owner, predict=infer):
+    import workflows
     tid = owner + "/" + thread["id"]
     version = thread["historyId"]
     if db.execute("SELECT 1 FROM mail_revision WHERE thread=? AND version=?", (tid, version)).fetchone():
@@ -128,7 +140,8 @@ def analyze(db, thread, settings, owner, predict=infer):
     msgs = messages(thread)
     existing = [dict(row) for row in db.execute("""SELECT t.id,t.title,t.state,m.message
         FROM mail_task m JOIN task t ON t.id=m.task WHERE m.thread=?""", (tid,))]
-    result = predict(settings, {"owner": owner, "messages": msgs, "existing": existing}) if msgs else {"actions":[]}
+    waiting=[dict(r) for r in db.execute("SELECT * FROM waiting WHERE status='waiting'") if r['thread']==thread['id'] or r['thread'].rstrip('/').endswith('/'+thread['id'])]
+    result = predict(settings, {"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting}) if msgs else {"actions":[]}
     actions = result["actions"]
     if not isinstance(actions, list):
         raise ValueError("invalid actions")
@@ -139,11 +152,23 @@ def analyze(db, thread, settings, owner, predict=infer):
             mid, quote = action["message"], action["quote"]
             if mid not in positions or not isinstance(quote, str) or not quote.strip() or quote not in msgs[positions[mid]]["text"]:
                 raise ValueError("ungrounded evidence")
-            if action["kind"] == "close":
+            if workflows.forgotten(db,'gmail',tid+'/'+mid+'/'+quote):
+                continue
+            if action['kind']=='answered':
+                from email.utils import parseaddr
+                request=next((r for r in waiting if r['id']==action.get('waiting')),None)
+                message=msgs[positions[mid]]
+                if not request or message['automated'] or message['sent'] or parseaddr(message.get('sender') or '')[1].lower()!=request['recipient'].lower() or int(message['date'])/1000<request['since']:
+                    raise ValueError('Invalid reply evidence')
+                db.execute("UPDATE waiting SET status='answered',reply=?,draft='' WHERE id=?",(quote,request['id']))
+            elif action["kind"] == "close":
                 task = action["task"]
                 if task not in origins or positions[mid] <= positions.get(origins[task], -1):
                     raise ValueError("invalid resolution")
-                db.execute("UPDATE task SET state='done' WHERE id=?", (task,))
+                # Model suggestions need review: a real quote can still be misunderstood.
+                evidence_key = tid+'/'+mid+'/'+quote
+                if not db.execute("SELECT 1 FROM source_event WHERE source='gmail' AND key=? AND task=? AND outcome IN ('suggested_completion','accepted_completion','rejected_completion')",(evidence_key,task)).fetchone():
+                    db.execute("INSERT INTO source_event(source,key,task,outcome,at) VALUES('gmail',?,?,'suggested_completion',?)", (evidence_key,task,time.time()))
                 db.execute("INSERT INTO mail_resolution VALUES(?,?,?)", (task, mid, quote))
             elif action["kind"] == "add":
                 title = action["title"]
@@ -155,6 +180,10 @@ def analyze(db, thread, settings, owner, predict=infer):
                 task = db.execute("INSERT INTO task(title,priority,state,due) VALUES(?,3,'open',?)",
                                   (title, time.time())).lastrowid
                 db.execute("INSERT INTO mail_task VALUES(?,?,?,?)", (tid, mid, quote, task))
+                db.execute('INSERT OR IGNORE INTO ownership VALUES(?,?,?)',(task,owner,msgs[positions[mid]].get('sender') or ''))
+                workflows.remember(db,'gmail',tid+'/'+mid+'/'+quote,quote,
+                                   'https://mail.google.com/mail/u/0/#all/'+thread['id'],
+                                   msgs[positions[mid]].get('sender') or '',task=task)
             else:
                 raise ValueError("unknown operation")
         db.execute("INSERT OR REPLACE INTO mail_revision VALUES(?,?)", (tid, version))

@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+*.sqlite3*
+.DS_Store
+.paco/
+dist/
+prebuilt/
+data/
+.env
+.env.*
+*.log
+Claude outputs/

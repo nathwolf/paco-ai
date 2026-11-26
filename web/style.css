@@ -1,0 +1,179 @@
+/* Paco workspace. Same tokens as setup.css: one rounded family, parrot colours, pressable buttons. */
+:root{
+  --ink:#1F3326; --text:#33463A; --muted:#5E6B62; --page:#FFFFFF; --tint:#F4F8F0; --line:#DDE5D6; --field:#F7FAF4; --bubble:#FFFFFF;
+  --leaf:#2D8511; --leaf-edge:#1F5F0B; --leaf-soft:#E7F5DD; --on-leaf:#FFFFFF;
+  --sky:#0E7CC0; --sky-edge:#0A5C8F; --sky-soft:#E3F2FB; --sky-text:#1278AE;
+  --alarm:#DE3324; --alarm-edge:#A82217; --alarm-soft:#FDE8E5; --alarm-text:#C3301F;
+  --beak:#FFB020; --beak-text:#A85800; --beak-soft:#FFF3DB;
+  --font:ui-rounded,"SF Pro Rounded","Nunito",system-ui,-apple-system,sans-serif;
+  color-scheme:light dark;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ink:#F2F8EE; --text:#DCE6D7; --muted:#A3B2A8; --page:#13201A; --tint:#1A2A21; --line:#2F4437; --field:#182519; --bubble:#1A2A21;
+    --leaf:#58C22C; --leaf-edge:#2E7612; --leaf-soft:#1E3A1A; --on-leaf:#0C1D06;
+    --sky:#2A9BE0; --sky-edge:#1A6FA6; --sky-soft:#14324A; --sky-text:#6CC4F5;
+    --alarm:#E5483A; --alarm-edge:#A82217; --alarm-soft:#3D1E1A; --alarm-text:#FF8A7E;
+    --beak:#FFB020; --beak-text:#FFC75A; --beak-soft:#3A2D12;
+  }
+}
+*{box-sizing:border-box}
+html,body{background:var(--page)}
+body{margin:0;color:var(--text);font:600 14px/1.5 var(--font);-webkit-font-smoothing:antialiased}
+[hidden]{display:none!important}
+h1,h2,h3{color:var(--ink);font-weight:800;letter-spacing:-.2px}
+h1{font-size:28px;margin:0}
+h2{font-size:19px;margin:0 0 14px}
+h3{font-size:15px;margin:24px 0 8px}
+p{margin:8px 0}
+a{color:var(--sky-text);font-weight:800}
+.muted{color:var(--muted)} .small{font-size:12px}
+.urgent{color:var(--alarm-text);font-weight:800}
+
+/* Sidebar: big friendly nav items; the selected one is a blue pressed tile. */
+aside{position:fixed;inset:0 auto 0 0;width:236px;border-right:2px solid var(--line);padding:24px 16px;display:flex;flex-direction:column;background:var(--page)}
+.brand{display:flex;align-items:center;gap:10px;font-size:26px;font-weight:900;color:var(--leaf);text-decoration:none;margin:0 6px 22px;letter-spacing:-.5px}
+.brand img{width:40px;height:40px}
+nav{display:grid;gap:6px}
+nav button{display:flex;align-items:center;gap:12px;width:100%;min-width:0;text-align:left;border:2px solid transparent;border-radius:14px;background:transparent;box-shadow:none;padding:8px 10px;color:var(--muted);font-size:13px;line-height:1.25;white-space:normal;text-transform:uppercase;letter-spacing:.3px;margin:0}
+nav button:hover{background:var(--tint)}
+nav button:active{transform:none}
+nav button.selected{background:var(--sky-soft);border-color:var(--sky);color:var(--sky-text)}
+.icon{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:10px;flex:none;color:#fff}
+.icon svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.icon.sky{background:var(--sky)} .icon.leaf{background:var(--leaf);color:var(--on-leaf)} .icon.beak{background:var(--beak);color:#3D2400} .icon.ink{background:var(--ink);color:var(--page)}
+.sidebar-bottom{margin-top:auto;padding:0 6px;font-size:12px;color:var(--muted)}
+.sidebar-bottom p{margin:4px 0 12px}
+.sidebar-bottom a{display:block;margin:6px 0}
+.live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--leaf);margin-right:6px}
+
+main{margin-left:236px;padding:28px 36px 40px;max-width:1240px}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px}
+#date{margin:0 0 2px;color:var(--muted);font-weight:700}
+
+/* Controls */
+button,input,select,textarea{font:inherit}
+select,input,textarea{border:2px solid var(--line);border-radius:12px;background:var(--field);color:var(--ink);padding:10px 12px;min-width:0;font-weight:700}
+input::placeholder,textarea::placeholder{color:var(--muted);opacity:1;font-weight:600}
+input:not([type=checkbox]):not([type=file]),textarea{width:100%}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px var(--sky-soft)}
+textarea{resize:vertical}
+label{display:block;font-size:13px;font-weight:700;color:var(--text);line-height:1.7}
+label input{margin:4px 0 12px}
+input[type=checkbox]{appearance:none;-webkit-appearance:none;width:22px;height:22px;flex:none;margin:0;border:2px solid var(--line);border-radius:7px;background:var(--field);display:inline-grid;place-items:center;cursor:pointer}
+input[type=checkbox]::after{content:"";width:6px;height:11px;border:solid var(--on-leaf);border-width:0 3px 3px 0;transform:rotate(45deg) translate(-1px,-1px);opacity:0}
+input[type=checkbox]:checked{background:var(--leaf);border-color:var(--leaf-edge)}
+input[type=checkbox]:checked::after{opacity:1}
+button{cursor:pointer;border:2px solid var(--line);border-radius:12px;background:var(--page);color:var(--sky-text);padding:8px 14px;font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.3px;box-shadow:0 4px 0 var(--line);margin-bottom:4px;white-space:nowrap;transition:transform .05s,box-shadow .05s}
+button:hover{background:var(--tint)}
+button:active{transform:translateY(4px);box-shadow:0 0 0 var(--line)}
+button:focus-visible{outline:3px solid var(--sky);outline-offset:3px}
+button:disabled{opacity:.55;cursor:wait}
+.primary{background:var(--leaf);border-color:var(--leaf);color:var(--on-leaf);box-shadow:0 4px 0 var(--leaf-edge)}
+.primary:hover{background:var(--leaf);filter:brightness(1.06)}
+.primary:active{box-shadow:0 0 0 var(--leaf-edge)}
+button.quiet{color:var(--muted)}
+:not(.inline,.task-actions,.hero-actions,.expressions,nav,.section-heading,.task-top,.chips,.filters)>button+button{margin-left:8px}
+a+button{margin-left:10px}
+.inline{display:flex;gap:10px;align-items:center}
+.inline input{flex:1}
+form>input,form>select,form>textarea,form>.inline{margin-bottom:12px}
+.check,.checks label{display:flex;align-items:center;gap:10px;margin:8px 0}
+.checks{display:grid;margin:8px 0 14px}
+
+/* Hero: Paco speaks. */
+.hero{display:flex;align-items:flex-end;gap:18px;margin-bottom:18px}
+.hero>img{width:132px;height:132px;flex:none}
+.speech{position:relative;flex:1;background:var(--bubble);border:2px solid var(--line);border-radius:22px;padding:18px 22px;margin-bottom:14px}
+.speech::before{content:"";position:absolute;left:-12px;bottom:28px;width:20px;height:20px;background:var(--bubble);border-left:2px solid var(--line);border-bottom:2px solid var(--line);transform:rotate(45deg);border-bottom-left-radius:5px}
+.hero h2{font-size:26px;margin:0 0 4px;letter-spacing:-.5px}
+.hero p{margin:0;color:var(--muted);font-size:15px}
+.hero-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+
+/* Counts as compact chips, coloured by meaning. */
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 22px}
+.stat{display:inline-flex;align-items:baseline;gap:6px;border:2px solid var(--line);border-radius:14px;padding:6px 14px;font-weight:800;color:var(--muted)}
+.stat b{font-size:20px;font-weight:900}
+.stat.open b{color:var(--sky-text)} .stat.urgent b{color:var(--alarm-text)} .stat.done b{color:var(--leaf)}
+
+.two-col{display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start}
+article{border:2px solid var(--line);border-radius:20px;padding:20px 22px;margin-bottom:20px;background:var(--page)}
+.section-heading{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.pill{font-size:13px;font-weight:900;color:var(--sky-text);background:var(--sky-soft);padding:2px 10px;border-radius:10px}
+
+/* Tasks: round tick on the left, title, meaning-coded chips, actions. */
+.task{display:grid;grid-template-columns:auto 1fr;gap:14px;padding:16px 0;border-bottom:2px solid var(--tint)}
+.task:last-child{border-bottom:0}
+.tick{width:34px;height:34px;padding:0;border-radius:50%;margin:2px 0 0;box-shadow:0 3px 0 var(--line)}
+.tick:hover{background:var(--leaf-soft);border-color:var(--leaf)}
+.tick:hover::after{content:"";display:block;width:8px;height:14px;margin:4px auto 0;border:solid var(--leaf);border-width:0 3px 3px 0;transform:rotate(45deg)}
+.task.is-urgent .tick{border-color:var(--alarm);box-shadow:0 3px 0 var(--alarm-edge)}
+.task-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.task-title{font-weight:800;color:var(--ink);font-size:16px;line-height:1.35}
+.flag{font-size:11px;padding:4px 9px;box-shadow:0 3px 0 var(--line);color:var(--muted)}
+.flag.on{background:var(--alarm);border-color:var(--alarm);color:#fff;box-shadow:0 3px 0 var(--alarm-edge)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0}
+.chip{font-size:12px;font-weight:800;border-radius:8px;padding:1px 8px}
+.chip.plain{color:var(--muted);background:var(--tint)} .chip.sky{color:var(--sky-text);background:var(--sky-soft)}
+.chip.alarm{color:var(--alarm-text);background:var(--alarm-soft)} .chip.beak{color:var(--beak-text);background:var(--beak-soft)}
+.task-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.task-actions button{font-size:11px;padding:5px 10px;box-shadow:0 3px 0 var(--line)}
+
+.empty{color:var(--muted);font-size:14px;padding:26px 0;text-align:center;line-height:1.7;white-space:pre-line}
+.plan-item{display:flex;gap:14px;padding:12px 0;border-bottom:2px solid var(--tint);font-weight:800;color:var(--ink)}
+.plan-time{min-width:52px;color:var(--sky-text)}
+.quiet-note{background:var(--beak-soft);color:var(--ink);padding:14px 16px;border-radius:14px;font-size:13px;line-height:1.6;margin-top:18px}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:24px}
+.bubble{padding:12px 16px;background:var(--tint);border-radius:18px 18px 18px 6px;white-space:pre-wrap;max-width:88%}
+.bubble.user{background:var(--sky-soft);border-radius:18px 18px 6px 18px;margin-left:auto}
+.session{padding:14px 16px;border:2px solid var(--line);border-radius:16px;margin:12px 0}
+.session pre,dialog pre{white-space:pre-wrap;word-break:break-word;font:600 12px/1.7 var(--font);max-height:350px;overflow:auto}
+.expressions{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.expressions button{padding:8px 6px 10px;text-transform:none;letter-spacing:0;color:var(--ink);font-size:13px;white-space:normal;line-height:1.25}
+.expressions img{display:block;width:100%;margin-bottom:6px}
+.expressions small{display:block;font-size:11px;color:var(--muted)}
+.result{border-bottom:2px solid var(--tint);padding:14px 0}
+.result b{color:var(--ink)}
+.result p{white-space:pre-wrap;font-size:13px}
+#notice{position:sticky;top:12px;z-index:5;background:var(--beak-soft);border:2px solid var(--beak);color:var(--ink);padding:11px 16px;border-radius:14px;margin-bottom:18px;font-weight:700}
+#notice.success{background:var(--leaf-soft);border-color:var(--leaf)}
+dialog{border:2px solid var(--line);border-radius:20px;padding:26px;width:min(650px,90vw);max-height:85vh;color:var(--text);background:var(--page)}
+dialog::backdrop{background:#0b140f99}
+#conversation{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;margin-bottom:18px}
+
+@media(max-width:1000px){
+  aside{width:200px} main{margin-left:200px;padding:24px 22px}
+  .two-col{grid-template-columns:1fr}
+  .hero>img{width:104px;height:104px}
+}
+/* The app window starts at 560px: the sidebar becomes a top bar of icons. */
+@media(max-width:760px){
+  aside{position:static;width:auto;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;border-right:0;border-bottom:2px solid var(--line)}
+  .brand{font-size:20px;margin:0 6px 0 0}.brand img{width:30px;height:30px}
+  nav{display:flex;order:3;width:100%;gap:6px}
+  nav button{width:auto;padding:4px;justify-content:center}
+  nav button span{display:none}
+  nav button.selected span{display:inline;padding-right:6px}
+  .sidebar-bottom{margin:0 0 0 auto;display:flex;gap:12px;padding:0}
+  .sidebar-bottom p,.sidebar-bottom .local{display:none}
+  .sidebar-bottom a{margin:0}
+  main{margin-left:0;padding:18px 16px}
+  header{flex-wrap:wrap;margin-bottom:14px} h1{font-size:22px}
+  .hero>img{width:76px;height:76px}
+  .hero h2{font-size:20px}
+  .speech{padding:14px 16px}
+  .inline{flex-wrap:wrap}
+  .expressions{grid-template-columns:repeat(3,1fr)}
+  article{padding:16px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}button:active{transform:none}}
+
+/* Take-me-there link on a task: looks like the pressable buttons, opens the source. */
+.task-actions .go{display:inline-flex;align-items:center;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;text-decoration:none;color:#fff;background:var(--sky);border:2px solid var(--sky);border-radius:12px;padding:4px 10px;box-shadow:0 3px 0 var(--sky-edge)}
+@media (prefers-color-scheme:dark){.task-actions .go{color:#08243A}}
+
+/* Projects: a filter row and a project chip on each task. */
+.filters{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+.filters button{font-size:11px;padding:4px 10px;box-shadow:0 3px 0 var(--line);color:var(--muted)}
+.filters button.on{background:var(--sky-soft);border-color:var(--sky);color:var(--sky-text);box-shadow:0 3px 0 var(--sky)}
+.chip.project{color:#3D2400;background:var(--beak)}

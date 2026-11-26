@@ -1,0 +1,2 @@
+# Optional local, CPU-based speech recognition. Audio stays on this Mac.
+faster-whisper>=1.2,<2
