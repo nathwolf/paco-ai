@@ -146,7 +146,9 @@ class Guard:
                 # which our CSRF check correctly rejects. Preserve the origin on
                 # the login form without disclosing its transaction query string.
                 referrer = b'strict-origin' if scope['path']=='/login' and scope['method']=='GET' else b'no-referrer'
-                message['headers']+= [(b'cache-control',b'no-store'),(b'x-content-type-options',b'nosniff'),(b'referrer-policy',referrer),(b'x-frame-options',b'DENY'),(b'content-security-policy',b"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")]
+                message['headers']+= [(b'cache-control',b'no-store'),(b'x-content-type-options',b'nosniff'),(b'referrer-policy',referrer),(b'x-frame-options',b'DENY')]
+                if not any(k.lower()==b'content-security-policy' for k,v in message['headers']):
+                    message['headers'].append((b'content-security-policy',b"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"))
             await send(message)
         try:
             if int(headers.get(b'content-length',b'0'))>256*1024:return await JSONResponse({'error':'Request too large'},413)(scope,receive,secure)

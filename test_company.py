@@ -158,6 +158,8 @@ class Company(unittest.TestCase):
             params={'response_type':'code','client_id':cid,'redirect_uri':'https://client.example/callback','scope':'tasks.read tasks.write','state':'state123','code_challenge':challenge,'code_challenge_method':'S256','resource':base+'/mcp'}
             page=client.get('/authorize?'+urlencode(params));self.assertEqual(page.status_code,200,page.text)
             self.assertEqual(page.headers['referrer-policy'],'strict-origin')
+            self.assertEqual(len(page.headers.get_list('content-security-policy')),1)
+            self.assertIn("form-action 'self' https://client.example;",page.headers['content-security-policy'])
             csrf=re.search('name="csrf" value="([^"]+)"',page.text)[1]
             # Simulate real form submissions under the old privacy header, plus
             # cross-site attempts. The fix must not loosen origin/CSRF checks.

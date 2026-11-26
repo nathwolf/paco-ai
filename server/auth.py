@@ -3,6 +3,7 @@ import hashlib
 import html
 import json
 import secrets
+import re
 import time
 from urllib.parse import urlsplit,urlencode
 from mcp.server.auth.provider import AuthorizationCode,RefreshToken,AccessToken,TokenError,AuthorizeError,RegistrationError,construct_redirect_uri
@@ -104,5 +105,13 @@ class Auth:
         <style>:root{{color-scheme:light dark}}body{{font:16px system-ui;max-width:420px;margin:12vh auto;padding:24px}}input,button{{box-sizing:border-box;width:100%;padding:12px;margin:8px 0}}button{{background:#376b55;color:white;border:0;border-radius:8px}}</style>
         <h1>Connect Paco</h1><p>Company accounts only. No public registration.</p><p>Allow <strong>{client}</strong> to access your task account: {scopes}.</p><p>Meeting transcripts and activity history are not available through this connection.</p>
         <form method="post"><input type="hidden" name="csrf" value="{csrf}"><label>Username<input name="username" autocomplete="username" required maxlength="80"></label><label>Password<input name="password" type="password" autocomplete="current-password" required maxlength="512"></label><button>Sign in and connect</button></form></html>''')
+        # Chromium/WebKit apply form-action to the 303 redirect as well as the
+        # form POST. Allow only this transaction's already-validated callback
+        # origin, never all HTTPS destinations or a client-supplied CSP string.
+        callback=urlsplit(value['params']['redirect_uri'])
+        origin=callback.scheme+'://'+callback.netloc
+        if not re.fullmatch(r"https?://(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::[0-9]+)?",origin):
+            return HTMLResponse('Unsupported callback address. Reconnect from your application.',status_code=400)
+        response.headers['Content-Security-Policy']="default-src 'none'; style-src 'unsafe-inline'; form-action 'self' "+origin+"; frame-ancestors 'none'; base-uri 'none'"
         response.set_cookie('paco_csrf',csrf,secure=True,httponly=True,samesite='lax',max_age=600)
         return response
