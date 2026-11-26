@@ -398,13 +398,29 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     NSImageView *sourceView=[[NSImageView alloc] initWithFrame:NSMakeRect(108,height-16-16,16,16)];
     sourceView.image=sourceImage;sourceView.contentTintColor=color(0x667069);sourceView.imageScaling=NSImageScaleProportionallyUpOrDown;
     sourceView.toolTip=[source[@"label"] isKindOfClass:NSString.class]?source[@"label"]:@"Paco";[sourceView setAccessibilityLabel:sourceView.toolTip];[content addSubview:sourceView];
+    NSDictionary *category=[value[@"category"] isKindOfClass:NSDictionary.class]?value[@"category"]:nil;
+    NSString *categoryText=[category[@"label"] isKindOfClass:NSString.class]?category[@"label"]:@"";
+    CGFloat chipLimit=322;
+    if(categoryText.length){
+        NSTextField *categoryLabel=[NSTextField labelWithString:categoryText];categoryLabel.font=rounded(10,NSFontWeightSemibold);
+        categoryLabel.textColor=color(0x5E6B62);categoryLabel.lineBreakMode=NSLineBreakByTruncatingTail;
+        categoryLabel.toolTip=[category[@"name"] isKindOfClass:NSString.class]?category[@"name"]:categoryText;
+        [categoryLabel setAccessibilityLabel:[@"Project " stringByAppendingString:categoryLabel.toolTip]];[categoryLabel sizeToFit];
+        CGFloat categoryWidth=MIN(80,NSWidth(categoryLabel.frame));
+        categoryLabel.frame=NSMakeRect(322-categoryWidth,height-17-14,categoryWidth,14);[content addSubview:categoryLabel];
+        chipLimit=322-categoryWidth-8;
+    }
     CGFloat x=132;
     for(NSUInteger i=0;i<badges.count&&i<2;i++){
         NSDictionary *badge=badges[i];if(![badge isKindOfClass:NSDictionary.class]||![badge[@"text"] isKindOfClass:NSString.class])continue;
         NSString *chipTone=[badge[@"tone"] isKindOfClass:NSString.class]?badge[@"tone"]:@"gray";
         NSTextField *label=[NSTextField labelWithString:badge[@"text"]];label.font=rounded(10,NSFontWeightSemibold);[label sizeToFit];
         CGFloat width=i==0?NSWidth(label.frame)+18:NSWidth(label.frame);
-        if(x+width>322)break;
+        if(x+width>chipLimit){
+            if(i!=0||chipLimit-x<30)break;
+            width=chipLimit-x;label.lineBreakMode=NSLineBreakByTruncatingTail;label.toolTip=badge[@"text"];
+            label.frame=NSMakeRect(0,0,MAX(0,width-18),NSHeight(label.frame));
+        }
         if(i==0){
             NSView *chip=[[NSView alloc] initWithFrame:NSMakeRect(x,height-14-20,width,20)];chip.wantsLayer=YES;chip.layer.cornerRadius=10;
             BOOL orange=[chipTone isEqual:@"orange"];

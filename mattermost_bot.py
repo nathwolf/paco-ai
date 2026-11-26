@@ -86,7 +86,8 @@ def prepare_answer(db, config, model, post, history, predict=None):
     context=[tasks.task(db,r[0]) for r in db.execute("SELECT id FROM task ORDER BY CASE WHEN state IN ('done','archived','cancelled','incorrect') THEN 1 ELSE 0 END,id DESC LIMIT 150")]
     proposals=[dict(r) for r in db.execute("SELECT id,task,changes,quote FROM mattermost_proposal WHERE status='pending' ORDER BY id DESC LIMIT 20")]
     message=dict(id=post['id'],sender=config['user_id'],mine=True,text=post['message'],at=post['create_at']/1000)
-    payload=dict(current_message=message,local_time=datetime.now().astimezone().isoformat(timespec='seconds'),
+    import project_tracking
+    payload=dict(project_trackers=project_tracking.summaries(db),current_message=message,local_time=datetime.now().astimezone().isoformat(timespec='seconds'),
         tasks=context,projects=[dict(r) for r in db.execute('SELECT id,name,area FROM project')],
         pending_proposals=proposals,history=history)
     value=predict(payload) if predict else models.complete(model,PROMPT,payload,'mattermost')[0]

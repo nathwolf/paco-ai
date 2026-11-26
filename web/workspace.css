@@ -18,3 +18,7 @@ h1{font-weight:750;letter-spacing:-.55px}h2{font-weight:650}.brand{font-weight:8
 @media(prefers-reduced-motion:reduce){button{transition:none}.primary:active:not(:disabled){transform:none}}
 
 :root[data-theme="dark"]{color-scheme:dark}
+
+/* Project awareness stays collapsed until requested; no extra section dividers. */
+.project-watch{margin:16px 0 8px}.project-watch summary{cursor:pointer;font-weight:650;padding:8px 0}.project-trackers{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:12px 0 20px}.project-tracker{display:flex;flex-direction:column;align-items:flex-start;gap:5px;text-align:left;padding:14px;min-width:0}.tracker-next{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4}
+.project-tracker{white-space:normal;overflow:hidden}.project-tracker>*{max-width:100%;overflow-wrap:anywhere}.project-tracker>span{font-weight:400}

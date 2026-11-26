@@ -33,10 +33,12 @@ Routine unanswered reminders gradually back off and are capped at eight per task
 
 ## Projects and focus days
 
-In **Settings → Projects & focus days**, add a project for each client or piece of work (“Client A”, “Paco”) with an area (“Consulting”, “Development”, “Marketing”). Every check-in then shows a blue project chip, and Today & workspace can be filtered by project.
+In **Settings → Projects & focus days**, add a project for each client or piece of work (“Client A”, “Paco”) with an area (“Consulting”, “Development”, “Marketing”). Task notifications show a short monochrome category label such as `#oles`, alongside the source icon and urgency. Repository owner/path labels stay out of the banner. Tasks can be filtered by project.
 
-- **Hints** tag work automatically: words, email domains (`@clienta.com`), repository paths (`github.com/clienta/`) or issue-key prefixes (`CLA-`) that only that project's work contains. The longest matching hint wins.
-- **Your model sorts the rest** when it may read your tasks (**My requests and local tasks**, or any local model). It only picks one of your projects or none, and is asked again only about new tasks.
+Each project has its own persistent local tracker. Open **Tasks → Project trackers** to see active/completed counts, blocked dependencies, urgent and overdue work, deadlines within three days, the next available task, and recent changes. Trackers refresh every 30 seconds while Paco is running and the Mac is awake/unlocked, and refresh on demand when you view them or ask Paco about project status. Connected services keep their own sync intervals; the trackers describe the tasks Paco has actually received, not unobserved work. They do not create additional notification streams or override holidays/focus protection. Project summaries are available to the app chat, task-notification replies, and your private Mattermost bot conversation. Empty projects mean no linked tasks yet, not that a project is finished.
+
+- **Hints** tag work automatically: words, email domains (`@clienta.com`), repository paths (`github.com/clienta/`) or issue-key prefixes (`CLA-`) that only that project's work contains. Specific hints can refine broad overlapping hints; conflicting independent clues remain for review. Your categories take priority over automatic repository buckets.
+- **Your model sorts the rest** when it may read your tasks (**My requests and local tasks**, or any local model). It only picks one of your projects or none, and reconsiders automatic assignments when tasks or categories change. Explicit task-level choices stay pinned.
 - **Your choice wins.** Change a task's project in **Edit** in Today & workspace; Paco never re-tags it.
 - **Focus day.** Choose a project under **Focus day** (Settings, or **Focus day** in Paco's menu) and only that project checks in until the end of today. Tasks you marked urgent still interrupt, and so do upcoming-meeting reminders. The morning plan, call-outs and late-task counts follow the same focus. Choose **All projects** to end it early.
 
