@@ -67,24 +67,33 @@ static unsigned toneText(NSString *name) { return paletteValue(@{@"red":@(0xC330
 OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__bridge PacoApp *)ref performSelector:@selector(companionMenu)];return noErr; }
 @implementation PacoApp
 - (NSImage *)menuIcon {
-    // Vector template: a parrot profile and Paco’s beret, legible at menu-bar size.
-    // macOS supplies the appropriate monochrome tint for light/dark appearances.
+    // A round head, hooked beak and one eye: readable at 20 points, without a hat.
+    // Template transparency lets macOS supply the light/dark menu-bar tint.
     NSImage *icon=[NSImage imageWithSize:NSMakeSize(20,20) flipped:NO drawingHandler:^BOOL(NSRect rect){
-        [NSColor.blackColor set];
-        NSBezierPath *head=[NSBezierPath bezierPath];head.lineWidth=1.5;head.lineJoinStyle=NSLineJoinStyleRound;head.lineCapStyle=NSLineCapStyleRound;
-        [head moveToPoint:NSMakePoint(5,3)];
-        [head curveToPoint:NSMakePoint(3.5,10) controlPoint1:NSMakePoint(2.5,5) controlPoint2:NSMakePoint(2.5,8)];
-        [head curveToPoint:NSMakePoint(12.5,14) controlPoint1:NSMakePoint(4.5,14) controlPoint2:NSMakePoint(9,15)];
-        [head curveToPoint:NSMakePoint(15,11) controlPoint1:NSMakePoint(14,13.5) controlPoint2:NSMakePoint(15,12.5)];
-        [head lineToPoint:NSMakePoint(18,10)];[head lineToPoint:NSMakePoint(15,6.5)];[head lineToPoint:NSMakePoint(13,8)];
-        [head curveToPoint:NSMakePoint(11,3) controlPoint1:NSMakePoint(13,5) controlPoint2:NSMakePoint(12,4)];[head stroke];
-        NSBezierPath *beret=[NSBezierPath bezierPath];[beret moveToPoint:NSMakePoint(2.5,14)];
-        [beret curveToPoint:NSMakePoint(14.5,15) controlPoint1:NSMakePoint(0,17) controlPoint2:NSMakePoint(12,21)];
-        [beret lineToPoint:NSMakePoint(13,13)];[beret closePath];[beret fill];
-        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(10.2,10,1.8,1.8)] fill];
+        [NSColor.blackColor setFill];
+        NSBezierPath *parrot=[NSBezierPath bezierPath];
+        [parrot moveToPoint:NSMakePoint(3.5,3)];
+        [parrot curveToPoint:NSMakePoint(3,11) controlPoint1:NSMakePoint(4.5,5) controlPoint2:NSMakePoint(2.5,7)];
+        [parrot curveToPoint:NSMakePoint(9,17) controlPoint1:NSMakePoint(3,14.5) controlPoint2:NSMakePoint(5.5,17)];
+        [parrot curveToPoint:NSMakePoint(14,14) controlPoint1:NSMakePoint(11.5,17) controlPoint2:NSMakePoint(13,16)];
+        [parrot curveToPoint:NSMakePoint(18.5,10.5) controlPoint1:NSMakePoint(16.5,14) controlPoint2:NSMakePoint(18.5,12.8)];
+        [parrot curveToPoint:NSMakePoint(15.5,6.5) controlPoint1:NSMakePoint(18.5,8.5) controlPoint2:NSMakePoint(17,7)];
+        [parrot curveToPoint:NSMakePoint(15,9.5) controlPoint1:NSMakePoint(16,8) controlPoint2:NSMakePoint(16,9)];
+        [parrot lineToPoint:NSMakePoint(12.5,10)];
+        [parrot curveToPoint:NSMakePoint(11.5,3) controlPoint1:NSMakePoint(12.5,7) controlPoint2:NSMakePoint(13,4.5)];
+        [parrot closePath];[parrot fill];
+        [NSGraphicsContext saveGraphicsState];
+        NSGraphicsContext.currentContext.compositingOperation=NSCompositingOperationDestinationOut;
+        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(9.2,12.5,2,2)] fill];
+        NSBezierPath *beak=[NSBezierPath bezierPath];beak.lineWidth=1;beak.lineCapStyle=NSLineCapStyleRound;
+        [beak moveToPoint:NSMakePoint(14,13.8)];
+        [beak curveToPoint:NSMakePoint(12.5,10) controlPoint1:NSMakePoint(12.9,13) controlPoint2:NSMakePoint(12.5,11.7)];
+        [beak stroke];
+        [NSGraphicsContext restoreGraphicsState];
         return YES;
-    }];icon.template=YES;icon.accessibilityDescription=@"Paco";return icon;
+    }];icon.template=YES;icon.accessibilityDescription=@"Paco parrot";return icon;
 }
+
 - (NSImage *)imageFor:(NSString *)mood {
     NSString *file=self.expressions[mood][@"file"]?:self.expressions[@"friendly"][@"file"];
     return [[NSImage alloc] initWithContentsOfFile:[self.assets stringByAppendingPathComponent:file]];
