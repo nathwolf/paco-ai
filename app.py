@@ -403,6 +403,8 @@ def act(db,path,connect,data):
         meeting_bridge.revoke(path);return {'ok':True}
     if action=='meeting_settings':
         return meetings.configure(db,data)
+    if action=='meeting_calendar_visibility':
+        return meeting_identity.calendar_visibility(db,data.get('event'),data.get('visible'))
     if action=='meeting_prepare':
         return meeting_audio.prepare()
     if action=='meeting_start':
@@ -869,7 +871,7 @@ def make_server(path,connect,port=0):
                     return self.respond({'meetings':meetings.list_notes(db),'preferences':meetings.preferences(db),
                         'speech':meeting_audio.readiness(),'active':meeting_audio.active(path),
                         'model':settings().get('meeting_model') or settings().get('model'),
-                        'upcoming_meetings':meeting_identity.upcoming(db),'model_override':settings().get('meeting_model'),'calendar_candidates':meeting_identity.candidates(db),'suggested_event':meeting_identity.suggested_event(meeting_identity.candidates(db))})
+                        'upcoming_meetings':meeting_identity.upcoming(db),'hidden_meetings':meeting_identity.upcoming(db,hidden=True),'model_override':settings().get('meeting_model'),'calendar_candidates':meeting_identity.candidates(db),'suggested_event':meeting_identity.suggested_event(meeting_identity.candidates(db))})
             if parsed.path=='/api/companion':
                 import startup
                 with closing(connect(path)) as db:

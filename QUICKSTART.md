@@ -401,6 +401,13 @@ doesn't run out while you are away. A completed session's final break ends on it
 start the next focus session when ready. Pauses and remaining time survive an app restart.
 
 Meetings shows up to 12 current/upcoming events from connected calendars over the next
-seven days. The cloud icon is green when company sync is current with no pending changes
+seven days. Clear calendar blocks (`x`, busy/focus time, time off) and solo errands are
+filtered locally; ambiguous titles stay visible. Invitees and call links preserve meeting
+context except for explicit `x` placeholders. The same filter applies to suggested recording
+context. Use **×** to remove an item from Paco, **Undo** to reverse it, or **Hidden → Show**
+to correct an automatic exclusion. Your choice survives calendar sync. None of these actions
+deletes an event from your calendar or removes its busy time.
+
+The cloud icon is green when company sync is current with no pending changes
 or conflicts, and red otherwise; hover it for the reason. Interface labels do not select
 accidentally; inputs, chat replies, task titles and meeting notes remain copyable.

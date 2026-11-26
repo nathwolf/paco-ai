@@ -5,13 +5,16 @@ can strengthen speaker attribution. Unsupported/stale signals fail unnamed.
 """
 import json
 import math
+import re
 import time
 import unicodedata
+from urllib.parse import urlsplit
 
 
 def initialize(db):
     db.executescript('''
     CREATE TABLE IF NOT EXISTS calendar_people(event TEXT PRIMARY KEY,people TEXT NOT NULL,synced REAL NOT NULL);
+    CREATE TABLE IF NOT EXISTS meeting_calendar_choice(event TEXT PRIMARY KEY,visible INTEGER NOT NULL CHECK(visible IN (0,1)),updated REAL NOT NULL);
     CREATE TABLE IF NOT EXISTS meeting_context(meeting TEXT PRIMARY KEY,event TEXT,context TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS meeting_speaker_sample(meeting TEXT,seconds REAL,source TEXT,snapshot TEXT NOT NULL,
       PRIMARY KEY(meeting,seconds,source));
@@ -39,20 +42,71 @@ def normalize_people(raw):
     return people
 
 
+def non_meeting_reason(event,people):
+    """Exclude clear personal blocks; ambiguous entries remain available.
+
+    This is deterministic and local. Invitation/meeting signals take priority over
+    task-like wording, except the user's explicit placeholder convention (x).
+    """
+    title=' '.join(''.join(c for c in unicodedata.normalize('NFKD',event['title']).casefold()
+                          if not unicodedata.combining(c)).split()).strip(' ._-')
+    if not title or re.fullmatch(r'x+',title):return 'Calendar block'
+    try:host=(urlsplit(event['url'] or '').hostname or '').lower()
+    except ValueError:host=''
+    call=host=='meet.google.com' or host=='teams.microsoft.com' or host=='teams.live.com' or host=='zoom.us' or host.endswith('.zoom.us')
+    if call or any(not p['self'] for p in people):return None
+    if re.match(r'^(print|imprimir|buy|comprar|pick up|recoger)\b',title) or (re.match(r'^(get|take|sacar)\b',title) and re.search(r'\b(photos|photo|fotos|foto)\b',title)):
+        return 'Personal task'
+    if re.search(r'\b(meeting|reunion|reu|call|llamada|standup|stand-up|retro|workshop|taller|interview|entrevista|rendez-vous|focus group)\b',title):return None
+    if re.fullmatch(r'(busy|blocked|block|hold|ocupad[oa]|bloquead[oa]|bloqueo|indisponible|focus|lunch|almuerzo|dejeuner|break|pausa|descanso|ooo|out of office|vacation|vacaciones|holiday|conges)',title):return 'Personal time'
+    if re.match(r'^(focus time|deep work|focus session|tiempo de concentracion|trabajo profundo|calendar block|bloqueo de calendario|personal time|admin time|out of office|vacaciones)\b',title):return 'Calendar block'
+    return None
+
+
+def calendar_rows(db,where,args):
+    return db.execute('''SELECT e.*,p.people,p.synced,c.visible FROM calendar_event e
+        LEFT JOIN calendar_people p ON p.event=e.id
+        LEFT JOIN meeting_calendar_choice c ON c.event=e.id WHERE '''+where+' ORDER BY e.start,e.id',args)
+
+
+def event_people(row):
+    try:return normalize_people(json.loads(row['people'] or row['attendees'] or '[]'))
+    except (ValueError,TypeError):return []
+
+
+def hidden_reason(row,people):
+    if row['visible'] is not None:return None if row['visible'] else 'Removed by you'
+    return non_meeting_reason(row,people)
+
+
+def calendar_visibility(db,event,visible):
+    if not isinstance(event,str) or type(visible) is not bool:raise ValueError('Choose a calendar event')
+    if not db.execute('SELECT 1 FROM calendar_event WHERE id=?',(event,)).fetchone():raise ValueError('Calendar event no longer available')
+    with db:db.execute('INSERT OR REPLACE INTO meeting_calendar_choice VALUES(?,?,?)',(event,int(visible),time.time()))
+    return {'ok':True}
+
+
 def candidates(db,now=None):
     now=time.time() if now is None else now
     result=[]
-    for r in db.execute('SELECT e.*,p.people,p.synced FROM calendar_event e LEFT JOIN calendar_people p ON p.event=e.id WHERE e.start<=? AND e.end>=? ORDER BY e.start',(now+15*60,now-15*60)):
-        people=normalize_people(json.loads(r['people'] or r['attendees'] or '[]'))
+    for r in calendar_rows(db,'e.start<=? AND e.end>=?',(now+15*60,now-15*60)):
+        people=event_people(r)
+        if hidden_reason(r,people):continue
         result.append({'id':r['id'],'title':r['title'],'start':r['start'],'end':r['end'],'url':r['url'],
                        'people':people,'fresh':bool(r['synced'] and now-r['synced']<=1800)})
     return result
 
 
-def upcoming(db,now=None):
+def upcoming(db,now=None,hidden=False):
     now=time.time() if now is None else now
-    return [dict(r) for r in db.execute("""SELECT id,title,start,end,url FROM calendar_event
-        WHERE end>? AND start<? ORDER BY start,id LIMIT 12""",(now,now+7*86400))]
+    result=[]
+    for r in calendar_rows(db,'e.end>? AND e.start<?',(now,now+7*86400)):
+        reason=hidden_reason(r,event_people(r))
+        if bool(reason)!=hidden:continue
+        item={k:r[k] for k in ('id','title','start','end','url')}
+        if reason:item['reason']=reason
+        result.append(item)
+    return result if hidden else result[:12]
 
 
 def suggested_event(events,now=None):
