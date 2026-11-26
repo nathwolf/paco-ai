@@ -372,7 +372,7 @@ def state(db):
             'preferences':dict(db.execute('SELECT key,value FROM preference')),
             'sync':[dict(r) for r in db.execute('SELECT * FROM sync_status')],
             'mail_coverage':mail_reasoning.coverage(db),
-            'calendar_scope':str(len(config.get('calendars') or ['primary']))+' calendar(s), next 30 days',
+            'calendar_scope':__import__('calendar_sync').scope(db),
             'sources':[k for k in config if k not in ('model','meeting_model','activity_model')], 'model':config.get('model'),
             'activity_model':config.get('activity_model'),
             'agents':[dict(r) for r in db.execute('SELECT * FROM agent_connection')],

@@ -167,8 +167,8 @@ class Sources:
             rows=db.execute('SELECT c.payload FROM calendar_task_link l JOIN calendar_task_context c ON c.event=l.event WHERE l.task=?',(task,)).fetchall()
             events=[json.loads(r[0]) for r in rows]
             if not events:raise ValueError('Calendar source missing')
-            personal=all((e.get('creator',{}).get('self') or attention.mine(db,e.get('creator',{}).get('email'))) and
-                         not any(not a.get('self') and not attention.mine(db,a.get('email')) for a in e.get('attendees',[])) for e in events)
+            personal=all(attention.mine(db,e.get('creator',{}).get('email')) and
+                         not any(not attention.mine(db,a.get('email')) for a in e.get('attendees',[])) for e in events)
             return {'events':events,'personal':bool(personal),'messages':[{'text':e['title']+'\n'+e['description'],'mine':False,'addressed':False} for e in events]}
         if source=='mattermost':
             import mattermost

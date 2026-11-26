@@ -448,3 +448,23 @@ mailbox audit. A clear, later confirmation of the whole obligation can mark it d
 account access, future promises, another person's work and partial checklist progress do
 not. Explicitly completed work can also prove a necessary earlier step for the same obligation; it does not prove unrelated steps or unverified parts of a broader checklist. Exact completion evidence stays local. Your explicit completion or later reopening
 wins. Cancelled calendar entries alone never prove a task was completed.
+
+### All Google calendars and moved events
+
+Calendar sync discovers all calendars in the connected Google account on every pass,
+including hidden and unselected calendars. Calendars with readable events are included
+automatically, including newly added calendars; free/busy-only access is reported as
+limited. Existing installations need the additional read-only calendar-list permission.
+A missing permission or failed calendar/page keeps the previous snapshot and shows a
+sync error instead of silently falling back to the primary calendar.
+
+Google can leave a cancelled copy when an event moves between calendars. Paco matches
+Google event identity and the original recurring occurrence across the complete snapshot,
+keeps one live copy, and preserves linked tasks, tags, decisions and source links. It does
+not guess moves from matching titles. Event-linked deadlines and reminder offsets follow
+rescheduling; unrelated dates and completed tasks stay unchanged. A genuinely cancelled
+calendar event is not proof that its preparation task was completed.
+
+Shared calendars provide context, not ownership: seeing Juan's calendar does not assign
+his work to you, and events without your participation do not block your availability.
+The calendar scope in Controls reports the discovered calendar count.

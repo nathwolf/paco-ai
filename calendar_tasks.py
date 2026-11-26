@@ -16,7 +16,9 @@ Attendance, being invited, organizing a meeting, an agenda topic or a colleague'
 an execution task. Do not invent "prepare for" tasks. A personal scheduled errand such as printing
 documents or getting passport photos is an action. Extract explicit preparation or deliverables
 from descriptions only when the owner is clear. A calendar block, x, holiday, focus time or lunch
-creates no task. Owner's roles and corrections distinguish execution, review and management.
+creates no task. Access to someone else's calendar, even with owner/editor permissions, does not make
+their tasks the user's. Creator/attendee self flags can refer to that calendar; match actual email
+identities and responsibilities. Owner's roles and corrections distinguish execution, review and management.
 Corrections are examples, not universal rules: dismissing one task does not reject an entire project.
 Keep related checklist steps together as one useful task; return at most two NEW tasks per event.
 Do not duplicate existing tasks, even if rephrased, broader, already dismissed or completed. If an

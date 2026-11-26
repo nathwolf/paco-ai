@@ -1,4 +1,5 @@
 """Read-only sources feeding Paco's local reminders."""
+from contextlib import nullcontext
 import argparse
 import json
 import os
@@ -15,7 +16,7 @@ from urllib.parse import quote
 ROOT = Path.home() / "Library/Application Support/Paco"
 CONFIG = ROOT / "sources.json"
 SCOPES = ["https://www.googleapis.com/auth/" + name for name in
-          ("gmail.readonly", "calendar.events.readonly", "tasks.readonly", "drive.metadata.readonly")]
+          ("gmail.readonly", "calendar.events.readonly", "calendar.calendarlist.readonly", "tasks.readonly", "drive.metadata.readonly")]
 def configure(args):
     if args[:1] == ["model"]:
         settings = mail_reasoning.configure(args[1:])
@@ -120,11 +121,12 @@ def calendar_action_context(event, calendar, begins, ends, all_day=False):
     return dict(id=calendar+':'+event['id'],title=event.get('summary',''),
         description=unescape(re.sub('<[^>]+>',' ',event.get('description','')))[:6000],
         start=begins,end=ends,all_day=all_day,url=event.get('htmlLink') or event.get('hangoutLink',''),
+        iCalUID=event.get('iCalUID'),originalStartTime=event.get('originalStartTime',{}),recurringEventId=event.get('recurringEventId'),
         version=event.get('etag',''),event_type=event.get('eventType','default'),
         creator=event.get('creator',{}),organizer=event.get('organizer',{}),attendees=event.get('attendees',[]))
 
 
-def google_rows(source, now, intervals=None, absences=None, calendars=None, events_out=None, people_out=None, context_out=None):
+def google_rows(source, now, intervals=None, absences=None, calendars=None, events_out=None, people_out=None, context_out=None, raw_events_out=None, account_email=None):
     with google_session() as session:
         page_zones={}
         def get(url, params):
@@ -151,9 +153,14 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
             events = []
             for calendar in calendars or ['primary']:
                 url = 'https://www.googleapis.com/calendar/v3/calendars/'+quote(calendar,safe='')+'/events'
-                events.extend((calendar,e) for e in pages(url, 'items', singleEvents='true', timeMin=stamp(now),timeMax=stamp(now+30*86400)))
+                events.extend((calendar,e) for e in pages(url, 'items', singleEvents='true', showDeleted='true', timeMin=stamp(now),timeMax=stamp(now+30*86400)))
+            if raw_events_out is not None:raw_events_out.extend(events)
             for calendar, event in events:
                 start = event.get("start", {}).get("dateTime")
+                # Shared calendars provide context, not the other person's availability.
+                own_presence = account_email is None or calendar=='primary' or any(
+                    str(person.get('email','')).casefold()==account_email.casefold()
+                    for person in [event.get('creator',{}),event.get('organizer',{})]+[a for a in event.get('attendees',[]) if a.get('responseStatus')!='declined'])
                 declined = any(a.get("self") and a.get("responseStatus") == "declined"
                                for a in event.get("attendees", []))
                 if event.get('eventType') == 'outOfOffice' and not declined and event.get('status') != 'cancelled':
@@ -165,7 +172,7 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
                         zone = event.get('start',{}).get('timeZone')
                         parsed = datetime.fromisoformat(value)
                         return parsed.replace(tzinfo=ZoneInfo(zone)).timestamp() if zone else parsed.timestamp()
-                    if absences is not None:
+                    if absences is not None and own_presence:
                         absences.append((calendar+':'+event['id'],event_time(event['start']),event_time(event['end']),event.get('summary','Time off'),'calendar'))
                     continue
                 if not start and context_out is not None and not declined and event.get('status')!='cancelled' and event.get('start',{}).get('date') and event.get('end',{}).get('date'):
@@ -188,7 +195,7 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
                         people_out.append((calendar+':'+event['id'],json.dumps(meeting_identity.normalize_people(event.get('attendees',[]))),now))
                     if context_out is not None and ends:
                         context_out.append(calendar_action_context(event,calendar,begins,datetime.fromisoformat(ends.replace('Z','+00:00')).timestamp()))
-                    if intervals is not None and ends and event.get("transparency") != "transparent":
+                    if intervals is not None and ends and own_presence and event.get("transparency") != "transparent":
                         intervals.append((begins, datetime.fromisoformat(ends.replace("Z", "+00:00")).timestamp()))
                     if begins > now:
                         yield calendar+':'+event["id"], "Prepare for " + event.get("summary", "meeting"), begins - 900
@@ -196,7 +203,7 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
 TRACKERS = {'tasks','apple_reminders','todoist','asana','jira','linear','microsoft_todo','gitlab'}
 
 
-def reconcile(db, source, rows, now):
+def reconcile(db, source, rows, now, commit=True):
     # Fetch the entire snapshot successfully before expiring any previous entries.
     rows = list(rows)
     if source in ('github','github_reviews'):
@@ -209,7 +216,7 @@ def reconcile(db, source, rows, now):
             existing = db.execute('SELECT task_id FROM discovered WHERE source=? AND key=?', (source,key)).fetchone() if db.execute("SELECT 1 FROM sqlite_master WHERE name='discovered'").fetchone() else None
             return tagging.repository_allowed(db,existing[0]) if existing else bool(tagging.repository_project(db,key,title))
         rows = [row for row in rows if allowed(row)]
-    with db:
+    with (db if commit else nullcontext()):
         db.execute("""CREATE TABLE IF NOT EXISTS discovered (
             source TEXT, key TEXT, task_id INTEGER, scheduled REAL,
             PRIMARY KEY(source,key))""")
@@ -304,7 +311,7 @@ def verify_github_missing(db, settings, source, now):
             source_outcome(db,source,key,'reassigned',now)
 
 
-def sync(db):
+def sync(db, only=None):
     import attention
     attention.review_imported_assignments(db)
     if not CONFIG.exists():
@@ -316,6 +323,7 @@ def sync(db):
         sources.insert(0, "linear")
     sources += list(config.get('connectors',{}))
     sources += [s for s in ('apple_calendar','apple_reminders') if config.get(s)]
+    if only is not None:sources=[s for s in sources if s in only]
     for source in sources:
         def success():
             with db:
@@ -395,6 +403,9 @@ def sync(db):
                 success()
                 continue
             intervals, absences, events, people, contexts = [], [], [], [], []
+            if source == 'calendar':
+                import calendar_sync
+                calendar_sync.sync(db,now);success();continue
             if source == 'github_reviews':
                 rows = github_reviews(config['github'],now)
             elif source == 'github':
@@ -404,24 +415,9 @@ def sync(db):
             reconcile(db, source, rows, now)
             if source in ('github','github_reviews'):
                 verify_github_missing(db,config['github'],source,now)
-            if source == "calendar":
-                import calendar_tasks
-                calendar_tasks.initialize(db)
-                with db:
-                    calendar_tasks.replace_context(db,contexts)
-                    db.execute("DELETE FROM busy")
-                    db.execute("DELETE FROM calendar_busy WHERE provider='google'")
-                    db.executemany("INSERT INTO calendar_busy VALUES('google',?,?)", intervals)
-                    db.execute('INSERT INTO busy SELECT start,end FROM calendar_busy')
-                    db.execute("DELETE FROM calendar_event WHERE id NOT LIKE 'apple:%'")
-                    db.executemany('INSERT OR REPLACE INTO calendar_event VALUES(?,?,?,?,?,?,?,?)',events)
-                    db.execute("DELETE FROM calendar_people WHERE event NOT LIKE 'apple:%'")
-                    db.executemany('INSERT OR REPLACE INTO calendar_people VALUES(?,?,?)',people)
-                    db.execute("DELETE FROM absence WHERE source='calendar'")
-                    db.executemany('INSERT OR REPLACE INTO absence VALUES(?,?,?,?,?)',absences)
         except Exception as exc:
             with db:
-                db.execute('UPDATE sync_status SET error=? WHERE source=?',(type(exc).__name__+' — reconnect or retry',source))
+                db.execute('UPDATE sync_status SET error=? WHERE source=?',((str(exc) if type(exc).__name__=='CalendarAccessError' else type(exc).__name__+' — reconnect or retry'),source))
             print(f"{source} sync failed ({type(exc).__name__}); retained prior tasks", file=sys.stderr)
         else:
             with db:
