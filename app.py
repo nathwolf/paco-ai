@@ -199,11 +199,14 @@ def report_loop(path, connect, name, error):
         LOG.warning('Could not record %s status (%s)',name,failure_label(exc))
 
 
-def run_loop(name, stop, interval, step, report=None, gate=None):
+def run_loop(name, stop, interval, step, report=None, gate=None, wake=None):
     """Run step every interval until stop. A failing pass is logged and retried; it never ends the loop.
     gate() returning False skips the pass (Paco rests while your session is locked or the displays are off)."""
     failing = False
     while not stop.is_set():
+        # Clear before work: an event arriving during a slow reply must trigger
+        # another pass rather than get lost at the end of this one.
+        if wake is not None:wake.clear()
         try:
             if gate is None or gate():
                 step()
@@ -217,7 +220,12 @@ def run_loop(name, stop, interval, step, report=None, gate=None):
             if failing and report:
                 report(name,None)
             failing = False
-        stop.wait(interval)
+        if wake is None:stop.wait(interval)
+        else:
+            deadline=time.monotonic()+interval
+            while not stop.is_set():
+                remaining=deadline-time.monotonic()
+                if remaining<=0 or wake.wait(min(1,remaining)):break
 
 
 def worker(path, connect, stop):
@@ -301,7 +309,12 @@ def worker(path, connect, stop):
             if db.execute("SELECT 1 FROM waiting WHERE status='waiting' AND due<=?",(now,)).fetchone():
                 workflows.run_automations(db,now,event='missing_reply')
     gate = lambda: presence.active()
-    for name,interval,step in (('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('Mattermost chat',3,mattermost_chat),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
+    import mattermost_events
+    chat_wake=threading.Event()
+    current_mattermost=lambda:settings().get('connectors',{}).get('mattermost')
+    threading.Thread(target=mattermost_events.listen,args=(stop,chat_wake,current_mattermost,gate,report),daemon=True).start()
+    threading.Thread(target=run_loop,args=('Mattermost chat',stop,30,mattermost_chat,report,gate,chat_wake),daemon=True).start()
+    for name,interval,step in (('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
         threading.Thread(target=run_loop,args=(name,stop,interval,step,report,gate),daemon=True).start()
     try:
         run_loop('reminders',stop,TICK_INTERVAL,reminders,report,gate)

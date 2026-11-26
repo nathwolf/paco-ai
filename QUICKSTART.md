@@ -372,8 +372,13 @@ task or reminder. Existing private-task updates and private-account questions st
 the owner's direct message with Paco; other participants cannot modify that account.
 
 Controls → Sources → Mattermost has **Reply to @paco in groups and channels**.
-Like private replies, it runs while this Mac is awake and unlocked, checking roughly
-with a 3-second pause between checks. Codex-backed chat and Mattermost replies use low
+Like private replies, it runs while this Mac is awake and unlocked. An authenticated
+Mattermost WebSocket wakes the reply worker on your DM or an explicit shared @paco mention.
+Events only trigger a check: the worker fetches and validates the message and channel
+before reasoning or replying. A 30-second fallback check and reconnect catch-up recover
+missed events. Typing, ordinary channel chatter and Paco's own messages do not trigger replies.
+The connection reconnects automatically and closes when you disable the bot or lock the Mac.
+Codex-backed chat and Mattermost replies use low
 reasoning effort; meeting analysis and other background reasoning keep their existing settings.
 No new server service or administrator bot privileges are required.
 Delivery receipts prevent replaying replies or creating tasks twice after an uncertain

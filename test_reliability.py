@@ -52,6 +52,7 @@ class Loops(unittest.TestCase):
                 if len(ticks) >= 3:
                     stop.set()
             with patch.object(app, 'TICK_INTERVAL', 0.01), patch.object(paco, 'tick', tick), \
+                 patch('mattermost_events.listen'), \
                  patch('app.presence.active', return_value=True), \
                  patch.object(discovery, 'sync', lambda db: None), self.assertLogs('paco', logging.WARNING):
                 thread = threading.Thread(target=app.worker, args=(path, paco.connect, stop))
