@@ -159,7 +159,7 @@ def conversations(client, config, now):
             messages.sort(key=lambda p:(p['create_at'],p['id']))
             if not messages: continue
             result.append(dict(id=root, channel=channel.get('display_name') or channel['name'],channel_id=channel['id'],
-                related_roots=list(groups),
+                channel_type=channel['type'],self_conversation=channel['type']=='D' and channel.get('name')==user['id']+'__'+user['id'],related_roots=list(groups),
                 history=[dict(id=p['id'],sender=p['user_id'],mine=p['user_id']==user['id'],text=p['message']) for p in sorted(posts.values(),key=lambda p:p['create_at']) if not p.get('delete_at') and p.get('message') and p['create_at']<=messages[-1]['create_at']][-20:] if channel['type'] in ('D','G') else [],
                 messages=[dict(id=p['id'],sender=p['user_id'],mine=p['user_id']==user['id'],text=p['message'],
                                at=p['create_at']/1000,version=p.get('update_at',p['create_at'])) for p in messages]))

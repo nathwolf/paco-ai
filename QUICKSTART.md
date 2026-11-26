@@ -411,3 +411,23 @@ deletes an event from your calendar or removes its busy time.
 The cloud icon is green when company sync is current with no pending changes
 or conflicts, and red otherwise; hover it for the reason. Interface labels do not select
 accidentally; inputs, chat replies, task titles and meeting notes remain copyable.
+
+### Learning which work is yours
+
+Paco checks new Gmail, calendar, Mattermost and in-scope GitHub suggestions in the
+background. Clear, grounded personal responsibilities become active automatically;
+uncertain ownership stays in the review list. The same check covers existing suggestions.
+Hover a task title to see why it was admitted.
+
+Use **Mine**, **Dismiss**, or change the assignee/responsibility when Paco gets it wrong.
+Relevant saved corrections are used as examples in later assessments. A learned
+pattern requires at least two comparable positive corrections in the same project,
+source and responsibility; a comparable rejection prevents automatic admission.
+Automatic decisions never become training examples. Explicit choices are preserved,
+and project roles still prevent a manager from inheriting someone else's execution work.
+
+This is contextual learning from saved corrections, not model retraining. It uses the
+configured model and existing source permissions, checks fresh source context, and
+leaves items for review when a source is unavailable or evidence is insufficient.
+Acceptance makes an item eligible for the normal reminder schedule; focus and quiet-time
+protection still apply. It does not send a notification for every newly accepted task.

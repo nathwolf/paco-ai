@@ -178,7 +178,7 @@ def corrections(db, config=None, limit=30):
     """Private task-level examples, never inferred company roles or raw source messages."""
     import models
     if config is not None and not (models.is_local(config) or 'chat' in config.get('allowed_sources',[])):return []
-    return [dict(r) for r in db.execute("""SELECT t.title,p.name AS project,a.kind AS responsibility,
+    return [dict(r) for r in db.execute("""SELECT e.id AS correction_id,e.task AS task,t.title,p.id AS project_id,p.name AS project,a.source,a.kind AS responsibility,
         COALESCE(o.owner,'') AS assignee,e.action AS correction,a.status AS current_status
         FROM attention_event e JOIN task t ON t.id=e.task
         LEFT JOIN task_attention a ON a.task=t.id LEFT JOIN ownership o ON o.task=t.id
