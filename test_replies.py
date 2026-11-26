@@ -160,3 +160,28 @@ class Replies(unittest.TestCase):
         result=self.say('yes please')
         self.assertFalse(result['pending'])
         self.assertEqual(self.db.execute('SELECT critical FROM urgency WHERE task=1').fetchone()[0],1)
+
+    def test_ownership_replies_persist_as_learning_without_completing(self):
+        import attention
+        self.say('not mine')
+        self.assertEqual(attention.info(self.db,1)['status'],'dismissed')
+        self.assertFalse(attention.eligible(self.db,1))
+        self.say('mine')
+        self.assertTrue(attention.eligible(self.db,1))
+        self.say('assign this to Juan')
+        self.assertEqual(self.task()['state'],'open')
+        self.assertFalse(attention.eligible(self.db,1))
+        self.assertEqual(attention.corrections(self.db)[0]['assignee'],'Juan')
+        self.assertIn('task corrections',self.say('what have you learned')['answer'])
+    def test_model_reassignment_cannot_override_a_newer_owner(self):
+        import workspace
+        proposal=self.proposed({'kind':'assign','person':'Juan'},'Juan should own this action')
+        workspace.edit_task(self.db,{'id':1,'changes':{'assignee':'Ana'}})
+        with self.assertRaises(ValueError):replies.confirm(self.db,proposal['reply'],True,self.now)
+        self.assertEqual(self.db.execute('SELECT owner FROM ownership WHERE task=1').fetchone()[0],'Ana')
+
+    def test_not_mine_clears_my_assignment_and_remembers_explicit_rejection(self):
+        import attention
+        self.say('mine');self.say('not mine')
+        self.assertEqual(self.db.execute('SELECT owner FROM ownership WHERE task=1').fetchone()[0],'')
+        self.assertEqual(attention.corrections(self.db)[0]['correction'],'not_mine')

@@ -125,6 +125,14 @@ def edit_task(db, data, commit=True):
             import attention
             old_attention=attention.info(db,ident)
             attention.record(db,ident,old_attention['status'],old_attention['reason'],old_attention['source'],fields['responsibility'],old_attention['duplicate_of'])
+        import attention
+        for field,action in [('assignee','reassign'),('responsibility','role')]:
+            if field not in fields or data.get('id') is None:continue
+            old_owner=db.execute('SELECT owner FROM ownership WHERE task=?',(ident,)).fetchone()
+            old_value=(old_owner[0] if old_owner else '') if field=='assignee' else old_attention['kind']
+            if fields[field]!=old_value:
+                db.execute('INSERT INTO attention_event(task,action,reason,at) VALUES(?,?,?,?)',
+                           (ident,action,'Explicit task correction',time.time()))
         if 'assignee' in fields:db.execute("INSERT INTO ownership VALUES(?,?,'') ON CONFLICT(task) DO UPDATE SET owner=excluded.owner",(ident,fields['assignee']))
         previous_project = db.execute('SELECT project FROM task_project WHERE task=?', (ident,)).fetchone()
         if 'project' in changes and ((previous_project and previous_project['project'] != project) or (not previous_project and project is not None)):

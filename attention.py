@@ -172,3 +172,18 @@ def review_imported_assignments(db):
                 AND a.reason='Detected from a conversation; confirm that this is your commitment'""").fetchall():
                 if mine(db,row['owner']):db.execute("UPDATE ownership SET owner='' WHERE task=?",(row['task'],))
             db.execute("INSERT INTO preference VALUES('unconfirmed_owners_v1','yes')")
+
+
+def corrections(db, config=None, limit=30):
+    """Private task-level examples, never inferred company roles or raw source messages."""
+    import models
+    if config is not None and not (models.is_local(config) or 'chat' in config.get('allowed_sources',[])):return []
+    return [dict(r) for r in db.execute("""SELECT t.title,p.name AS project,a.kind AS responsibility,
+        COALESCE(o.owner,'') AS assignee,e.action AS correction,a.status AS current_status
+        FROM attention_event e JOIN task t ON t.id=e.task
+        LEFT JOIN task_attention a ON a.task=t.id LEFT JOIN ownership o ON o.task=t.id
+        LEFT JOIN task_project tp ON tp.task=t.id LEFT JOIN project p ON p.id=tp.project
+        WHERE e.action IN ('accept','dismiss','not_mine','reassign','role')
+        AND e.id=(SELECT MAX(e2.id) FROM attention_event e2 WHERE e2.task=e.task
+                  AND e2.action IN ('accept','dismiss','not_mine','reassign','role'))
+        ORDER BY e.id DESC LIMIT ?""",(limit,))]

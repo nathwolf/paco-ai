@@ -64,7 +64,7 @@ def for_task(db, task_id):
         row = db.execute("""SELECT url,source FROM evidence WHERE task=? AND deleted=0 AND url LIKE 'http%'
                             ORDER BY at DESC LIMIT 1""", (task_id,)).fetchone()
         if row:
-            return web(row['url'], {'gmail': 'Open email', 'slack': 'Open in Slack', 'mattermost': 'Open in Mattermost'}.get(row['source']))
+            return web(row['url'], {'gmail': 'Open email', 'calendar':'Open in Calendar', 'slack': 'Open in Slack', 'mattermost': 'Open in Mattermost'}.get(row['source']))
     if _has(db, 'meeting_item') and db.execute('SELECT 1 FROM meeting_item WHERE task=?', (task_id,)).fetchone():
         return {'url': '/meetings', 'label': 'Open meeting notes'}
     if _has(db, 'company_task_fields'):

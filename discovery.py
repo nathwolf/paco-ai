@@ -114,12 +114,25 @@ def google_session():
     return AuthorizedSession(Credentials.from_authorized_user_info(json.loads(raw)))
 
 
-def google_rows(source, now, intervals=None, absences=None, calendars=None, events_out=None, people_out=None):
+def calendar_action_context(event, calendar, begins, ends, all_day=False):
+    from html import unescape
+    import re
+    return dict(id=calendar+':'+event['id'],title=event.get('summary',''),
+        description=unescape(re.sub('<[^>]+>',' ',event.get('description','')))[:6000],
+        start=begins,end=ends,all_day=all_day,url=event.get('htmlLink') or event.get('hangoutLink',''),
+        version=event.get('etag',''),event_type=event.get('eventType','default'),
+        creator=event.get('creator',{}),organizer=event.get('organizer',{}),attendees=event.get('attendees',[]))
+
+
+def google_rows(source, now, intervals=None, absences=None, calendars=None, events_out=None, people_out=None, context_out=None):
     with google_session() as session:
+        page_zones={}
         def get(url, params):
             response = session.get(url, params=params, timeout=15)
             response.raise_for_status()
-            return response.json()
+            data=response.json()
+            if data.get('timeZone'):page_zones[url]=data['timeZone']
+            return data
         def pages(url, field, **params):
             while True:
                 data = get(url, params)
@@ -155,6 +168,13 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
                     if absences is not None:
                         absences.append((calendar+':'+event['id'],event_time(event['start']),event_time(event['end']),event.get('summary','Time off'),'calendar'))
                     continue
+                if not start and context_out is not None and not declined and event.get('status')!='cancelled' and event.get('start',{}).get('date') and event.get('end',{}).get('date'):
+                    from zoneinfo import ZoneInfo
+                    zone=event.get('start',{}).get('timeZone') or page_zones.get('https://www.googleapis.com/calendar/v3/calendars/'+quote(calendar,safe='')+'/events')
+                    def day_time(value):
+                        parsed=datetime.fromisoformat(value)
+                        return parsed.replace(tzinfo=ZoneInfo(zone)).timestamp() if zone else parsed.timestamp()
+                    context_out.append(calendar_action_context(event,calendar,day_time(event['start']['date']),day_time(event['end']['date']),True))
                 if start and not declined and event.get("status") != "cancelled":
                     begins = datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp()
                     ends = event.get("end", {}).get("dateTime")
@@ -166,6 +186,8 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
                     if people_out is not None and ends:
                         import meeting_identity
                         people_out.append((calendar+':'+event['id'],json.dumps(meeting_identity.normalize_people(event.get('attendees',[]))),now))
+                    if context_out is not None and ends:
+                        context_out.append(calendar_action_context(event,calendar,begins,datetime.fromisoformat(ends.replace('Z','+00:00')).timestamp()))
                     if intervals is not None and ends and event.get("transparency") != "transparent":
                         intervals.append((begins, datetime.fromisoformat(ends.replace("Z", "+00:00")).timestamp()))
                     if begins > now:
@@ -372,18 +394,21 @@ def sync(db):
                     raise ValueError('Gmail requires a configured model')
                 success()
                 continue
-            intervals, absences, events, people = [], [], [], []
+            intervals, absences, events, people, contexts = [], [], [], [], []
             if source == 'github_reviews':
                 rows = github_reviews(config['github'],now)
             elif source == 'github':
                 rows = github(config[source],now)
             else:
-                rows = google_rows(source,now,intervals,absences,config.get('calendars'),events,people)
+                rows = google_rows(source,now,intervals,absences,config.get('calendars'),events,people,contexts)
             reconcile(db, source, rows, now)
             if source in ('github','github_reviews'):
                 verify_github_missing(db,config['github'],source,now)
             if source == "calendar":
+                import calendar_tasks
+                calendar_tasks.initialize(db)
                 with db:
+                    calendar_tasks.replace_context(db,contexts)
                     db.execute("DELETE FROM busy")
                     db.execute("DELETE FROM calendar_busy WHERE provider='google'")
                     db.executemany("INSERT INTO calendar_busy VALUES('google',?,?)", intervals)

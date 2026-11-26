@@ -24,7 +24,8 @@ tasks alone, including manually completed tasks. For waiting requests supplied i
 waiting array, a substantive answer from the expected recipient may return
 {"kind":"answered","waiting":"waiting id","message":"message id","quote":"exact answer"}.
 An automated reply, acknowledgement, or promise to answer later is not an answer.
-For adds, also return responsibility: execute, review, decide, follow_up, or informed. Use the project roles to distinguish doing work from overseeing it. For adds, return owner: the exact mailbox owner address only if the obligation is theirs, otherwise null.
+For adds, also return responsibility: execute, review, decide, follow_up, or informed. Use the project roles to distinguish doing work from overseeing it. Use responsibility_corrections as task-level examples, not universal role rules. Dismissal alone does not mean someone else owns the work.
+For adds, return owner: the exact mailbox owner address only if the obligation is theirs, otherwise null.
 Do not convert vendor announcements, optional invitations, expired registration offers, general advice,
 or conditional instructions ("if you use X") into tasks without evidence that they apply personally.
 Use local_time to reject past one-off opportunities. Do not assign a colleague's promised work to the recipient.
@@ -155,7 +156,7 @@ def analyze(db, thread, settings, owner, predict=infer):
         FROM mail_task m JOIN task t ON t.id=m.task WHERE m.thread=?""", (tid,))]
     waiting=[dict(r) for r in db.execute("SELECT * FROM waiting WHERE status='waiting'") if r['thread']==thread['id'] or r['thread'].rstrip('/').endswith('/'+thread['id'])]
     import project_brains
-    result = predict(settings, {"project_briefs":project_brains.context(db),"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting,"local_time":__import__("datetime").datetime.now().astimezone().isoformat()}) if msgs else {"actions":[]}
+    result = predict(settings, {"responsibility_corrections":attention.corrections(db,settings),"project_briefs":project_brains.context(db),"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting,"local_time":__import__("datetime").datetime.now().astimezone().isoformat()}) if msgs else {"actions":[]}
     actions = result["actions"]
     if not isinstance(actions, list):
         raise ValueError("invalid actions")

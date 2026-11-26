@@ -54,6 +54,8 @@ SETTINGS_LOCK = threading.RLock()
 
 
 def initialize(db):
+    import calendar_tasks
+    calendar_tasks.initialize(db)
     workspace.initialize(db)
     project_tracking.initialize(db)
     agents.initialize(db)
@@ -252,6 +254,10 @@ def worker(path, connect, stop):
         with closing(connect(path)) as db:
             tagging.retag(db,settings().get('model'))
             attention.reconcile_duplicates(db)
+    def calendar_actions():
+        import calendar_tasks
+        with closing(connect(path)) as db:
+            calendar_tasks.sync(db,settings().get('model'))
     def track_projects():
         with closing(connect(path)) as db:
             project_tracking.refresh(db)
@@ -316,7 +322,7 @@ def worker(path, connect, stop):
     current_mattermost=lambda:settings().get('connectors',{}).get('mattermost')
     threading.Thread(target=mattermost_events.listen,args=(stop,chat_wake,current_mattermost,gate,report),daemon=True).start()
     threading.Thread(target=run_loop,args=('Mattermost chat',stop,30,mattermost_chat,report,gate,chat_wake),daemon=True).start()
-    for name,interval,step in (('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
+    for name,interval,step in (('calendar actions',60,calendar_actions),('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
         threading.Thread(target=run_loop,args=(name,stop,interval,step,report,gate),daemon=True).start()
     try:
         run_loop('reminders',stop,TICK_INTERVAL,reminders,report,gate)
@@ -581,7 +587,7 @@ def act(db,path,connect,data):
         return {'ok':True}
     if action=='model':
         allowed = data.get('allowed_sources',[])
-        if not isinstance(allowed,list) or set(allowed)-{'gmail','mattermost','chat','meeting','desktop','activity'}:
+        if not isinstance(allowed,list) or set(allowed)-{'gmail','calendar','mattermost','chat','meeting','desktop','activity'}:
             raise ValueError('Unknown source consent')
         config = settings()
         # Consents the form does not show (desktop text) are kept rather than silently dropped.
