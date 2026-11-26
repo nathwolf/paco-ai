@@ -61,6 +61,8 @@ def record(db,task,status,reason='',source='direct',kind='execute',duplicate_of=
 
 def eligible(db,task):
     """Urgency never makes somebody else's work your obligation."""
+    import tagging
+    if not tagging.repository_allowed(db,task):return False
     item=info(db,task)
     if item['status']!='accepted' or item['kind']=='informed':return False
     owner=db.execute('SELECT owner FROM ownership WHERE task=?',(task,)).fetchone()
@@ -155,3 +157,18 @@ def reconcile_duplicates(db):
     with db:
         rows=db.execute("SELECT a.task,a.source,a.kind FROM task_attention a JOIN task t ON t.id=a.task WHERE a.status='suggested' AND t.state IN ('open','focus','blocked') ORDER BY a.task").fetchall()
         for row in rows:candidate(db,row['task'],row['source'],kind=row['kind'])
+
+
+def review_imported_assignments(db):
+    """A tracker assignment is evidence to review, not proof of personal execution."""
+    with db:
+        db.execute("""UPDATE task_attention SET status='suggested',
+            reason='Imported assignment; confirm your responsibility before reminders'
+            WHERE source IN ('github','github_reviews') AND status='accepted'
+            AND reason IN ('Assigned source','Assigned to your connected source account')""")
+        if not db.execute("SELECT 1 FROM preference WHERE key='unconfirmed_owners_v1'").fetchone():
+            for row in db.execute("""SELECT o.task,o.owner FROM ownership o JOIN task_attention a ON a.task=o.task
+                WHERE a.status='suggested' AND a.source IN ('gmail','mattermost')
+                AND a.reason='Detected from a conversation; confirm that this is your commitment'""").fetchall():
+                if mine(db,row['owner']):db.execute("UPDATE ownership SET owner='' WHERE task=?",(row['task'],))
+            db.execute("INSERT INTO preference VALUES('unconfirmed_owners_v1','yes')")

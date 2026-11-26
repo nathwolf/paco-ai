@@ -34,13 +34,16 @@ class Attention(unittest.TestCase):
         attention.decision(self.db,task,'dismiss');self.assertFalse(attention.eligible(self.db,task))
         other=self.task('Juan must send the project report',assignee='Juan')
         with self.assertRaises(ValueError):attention.decision(self.db,other,'accept')
-    def test_calendar_is_reference_but_real_assignment_still_active(self):
+    def test_calendar_is_reference_and_imported_assignment_needs_confirmation(self):
         discovery.reconcile(self.db,'calendar',[('event1','Prepare for weekly meeting',time.time())],time.time())
         discovery.reconcile(self.db,'github',[('issue1','Fix the solver initialization problem',time.time())],time.time())
         values=app.state(self.db)['tasks'];bytitle={t['title']:t for t in values}
         self.assertFalse(bytitle['Prepare for weekly meeting']['my_responsibility'])
         self.assertEqual(bytitle['Prepare for weekly meeting']['attention']['status'],'reference')
-        self.assertTrue(bytitle['Fix the solver initialization problem']['my_responsibility'])
+        self.assertFalse(bytitle['Fix the solver initialization problem']['my_responsibility'])
+        ident=bytitle['Fix the solver initialization problem']['id']
+        attention.decision(self.db,ident,'accept')
+        self.assertTrue(attention.eligible(self.db,ident))
     def test_cross_thread_duplicate_links_to_one_commitment(self):
         mail_reasoning.initialize(self.db)
         for index in ('1','2'):
@@ -103,3 +106,66 @@ class Attention(unittest.TestCase):
     def test_email_addresses_in_titles_do_not_erase_the_task_text(self):
         self.task('Email stakeholder.longname@example.test about the budget')
         self.assertIsNone(attention.find_duplicate(self.db,'Email stakeholder.longname@example.test about the launch'))
+
+    def test_unknown_repo_ignored_until_chosen_project_exists(self):
+        url='https://github.com/acme/laboteca/issues/1'
+        rows=[(url,'Fix document export',100)]
+        discovery.reconcile(self.db,'github',rows,100)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM task').fetchone()[0],0)
+        project=tagging.save_project(self.db,{'name':'Documents','hints':'github.com/acme/laboteca/'})
+        discovery.reconcile(self.db,'github',rows,200)
+        task=self.db.execute('SELECT id FROM task').fetchone()[0]
+        self.assertEqual(attention.info(self.db,task)['status'],'suggested')
+        attention.decision(self.db,task,'accept')
+        self.assertTrue(attention.eligible(self.db,task))
+        tagging.delete_project(self.db,project)
+        self.assertFalse(attention.eligible(self.db,task))
+        discovery.reconcile(self.db,'github',rows,300)
+        self.assertEqual(self.db.execute('SELECT state FROM task').fetchone()[0],'unavailable')
+        tagging.save_project(self.db,{'name':'Documents','hints':'github.com/acme/laboteca/'})
+        discovery.reconcile(self.db,'github',rows,400)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM task').fetchone()[0],1)
+        self.assertTrue(attention.eligible(self.db,task))
+
+    def test_shared_project_source_link_admits_repo_without_name_match(self):
+        project=tagging.save_project(self.db,{'name':'Research'})
+        project_brains.apply(self.db,dict(id=str(uuid.uuid4()),revision=1,updated=1,actor='user',data={'name':'Research','sources':['https://github.com/acme/laboteca']}),project)
+        self.assertEqual(tagging.repository_project(self.db,'https://github.com/acme/laboteca/issues/1','Export'),project)
+        discovery.reconcile(self.db,'github',[('https://github.com/acme/laboteca/issues/1','Export',0)],0)
+        task=self.db.execute('SELECT id FROM task').fetchone()[0]
+        attention.decision(self.db,task,'accept')
+        self.assertTrue(attention.eligible(self.db,task))
+        self.assertIsNone(tagging.repository_project(self.db,'https://github.com/acme/laboteca-other/issues/1','Export'))
+
+    def test_upgrade_preserves_explicit_acceptance_and_foreign_owner(self):
+        imported=self.task();explicit=self.task('Another action to keep personally')
+        foreign=self.task('Juan will prepare the final report',assignee='juan')
+        with self.db:
+            attention.record(self.db,imported,'accepted','Assigned source','github')
+            attention.record(self.db,explicit,'accepted','Your explicit choice','github')
+            attention.candidate(self.db,foreign,'gmail')
+        attention.review_imported_assignments(self.db)
+        self.assertEqual(attention.info(self.db,imported)['status'],'suggested')
+        self.assertTrue(attention.eligible(self.db,explicit))
+        self.assertEqual(self.db.execute('SELECT owner FROM ownership WHERE task=?',(foreign,)).fetchone()[0],'juan')
+        attention.decision(self.db,imported,'accept')
+        attention.review_imported_assignments(self.db)
+        self.assertTrue(attention.eligible(self.db,imported))
+
+    def test_foreign_mail_action_is_not_imported_and_suggestion_is_unassigned(self):
+        mail_reasoning.initialize(self.db)
+        thread=dict(id='t',historyId='1',messages=[message('1','Juan will send the budget. Please check the draft.')])
+        actions=[dict(kind='add',title='Send the budget',message='1',quote='Juan will send the budget',owner='juan@example.test'),dict(kind='add',title='Check the draft',message='1',quote='Please check the draft',owner='nathalia@example.test')]
+        mail_reasoning.analyze(self.db,thread,{},'nathalia@example.test',Mock(return_value={'actions':actions}))
+        self.assertEqual(self.db.execute('SELECT count(*) FROM task').fetchone()[0],1)
+        self.assertEqual(self.db.execute('SELECT owner FROM ownership').fetchone()[0],'')
+        self.assertFalse(attention.eligible(self.db,self.db.execute('SELECT id FROM task').fetchone()[0]))
+
+    def test_manual_category_teaches_repository_scope(self):
+        project=tagging.save_project(self.db,{'name':'Research'})
+        task=self.task()
+        with self.db:
+            self.db.execute('CREATE TABLE discovered(source TEXT,key TEXT,task_id INTEGER,scheduled REAL,PRIMARY KEY(source,key))')
+            self.db.execute("INSERT INTO discovered VALUES('github','https://github.com/acme/library/issues/1',?,0)",(task,))
+        tagging.tag(self.db,task,project)
+        self.assertEqual(tagging.repository_project(self.db,'https://github.com/acme/library/issues/2','Another document'),project)

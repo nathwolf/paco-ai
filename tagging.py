@@ -138,7 +138,11 @@ def _hint_match(hint, text):
 
 
 def hint_result(db, task, candidates):
-    text = _text(db, task)
+    return match_text(_text(db, task), candidates)
+
+
+def match_text(text, candidates):
+    text = text.casefold()
     matches = {}
     for project in candidates:
         for hint in (h.strip().casefold() for h in (project['hints'] + ',' + project['name']).split(',')):
@@ -181,6 +185,37 @@ def source_group(db, task):
     if host.endswith('.atlassian.net') and len(parts) >= 2 and parts[0] == 'browse' and re.fullmatch(r'[A-Za-z]+-\d+', parts[1]):
         return host + '/' + parts[1].rsplit('-', 1)[0].casefold()
     return ''
+
+
+def repository_project(db, url, title=''):
+    """Only chosen project clues or explicitly listed repositories admit imported work."""
+    candidates = [p for p in projects(db) if p['user_created']]
+    parsed = urlsplit(url)
+    parts = parsed.path.strip('/').split('/')
+    if parsed.hostname == 'github.com' and len(parts) >= 2:
+        group = parsed.hostname + '/' + '/'.join(parts[:2]).casefold()
+        learned = {e['project'] for e in _examples(db) if e['group'] == group}
+        if learned:
+            chosen = {p['id'] for p in candidates}
+            return next(iter(learned)) if len(learned) == 1 and learned <= chosen else None
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='project_brain'").fetchone():
+        for p in candidates:
+            row = db.execute('SELECT payload FROM project_brain WHERE project=?', (p['id'],)).fetchone()
+            if row:
+                sources = json.loads(row[0]).get('sources', [])
+                p['hints'] += ',' + ','.join(s.rstrip('/')+'/' for s in sources)
+    return match_text(url.rstrip('/')+'/'+'\n'+title, candidates)[0]
+
+
+def repository_allowed(db, task):
+    group = source_group(db, task)
+    if not group:
+        return True
+    explicit = db.execute("SELECT project FROM task_project WHERE task=? AND how='manual'", (task,)).fetchone()
+    if explicit and explicit[0] in {p['id'] for p in projects(db) if p['user_created']}:
+        return True
+    row = db.execute('SELECT title FROM task WHERE id=?', (task,)).fetchone()
+    return bool(repository_project(db, 'https://'+group+'/', row['title'] if row else ''))
 
 
 def _examples(db):

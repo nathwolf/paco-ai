@@ -178,7 +178,7 @@ Return JSON {"actions":[...]}. Add: {"kind":"add","title":"concrete next action"
 "quote":"exact supporting substring"}. Update: {"kind":"update","task":integer,"changes":{...},
 "message":"id","quote":"exact supporting substring"}. Allowed changes: title, description, status
 (open/done/blocked/cancelled), priority (1..5), urgent (boolean), deadline (ISO8601 offset or null),
-remind_at (ISO8601 offset), assignee, tags (list), estimate_minutes, responsibility (execute/review/decide/follow_up/informed). Adds may include responsibility too. Use supplied local_time to resolve
+remind_at (ISO8601 offset), assignee, tags (list), estimate_minutes, responsibility (execute/review/decide/follow_up/informed). Adds must include owner: the account owner's username only when clearly their obligation, otherwise null. Adds may include responsibility too. A request made BY the owner to a colleague is the colleague's task, not the owner's execution task. Use supplied local_time to resolve
 relative dates. Do not invent dates, urgency, or ownership. Empty actions is valid. You cannot send messages."""
 
 
@@ -237,6 +237,7 @@ def sync(db, config, model, now=None, client=None, predict=None):
         for action in actions:
             if action.get('kind','add')=='update' and action.get('message') not in updates:
                 raise ValueError('An old message cannot overwrite newer task changes')
+            if action.get('kind','add')=='add' and 'owner' in action and not attention.mine(db,action['owner']):continue
             item=tasks.prepare(db,action,existing,messages,account)
             if item is None:continue
             fingerprint=hashlib.sha256((item['msg']['id']+'\0'+item['quote']).encode()).hexdigest()
@@ -251,7 +252,7 @@ def sync(db, config, model, now=None, client=None, predict=None):
                 ident=result['task']
                 if item['kind']=='add':
                     db.execute('INSERT OR IGNORE INTO mattermost_task VALUES(?,?,?)',(key,fingerprint,ident))
-                    db.execute('INSERT OR IGNORE INTO ownership VALUES(?,?,?)',(ident,config['username'],item['msg']['sender']))
+                    db.execute('INSERT OR IGNORE INTO ownership VALUES(?,?,?)',(ident,config['username'] if attention.self_commitment(item['quote'],item['msg'].get('mine')) else '',item['msg']['sender']))
                     kind=item['fields'].get('responsibility','execute')
                     canonical=attention.candidate(db,ident,'mattermost',kind=kind)
                     if kind=='informed' and canonical==ident:attention.record(db,ident,'reference','Information rather than an obligation','mattermost',kind)

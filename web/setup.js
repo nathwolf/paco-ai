@@ -45,7 +45,7 @@ async function refresh(){const [r,c]=await Promise.all([fetch('/api/state'),fetc
   const off=node('button','Disconnect');off.className='quiet';off.onclick=async()=>{if(!confirm('Disconnect '+(NAMES[provider]||provider)+'? Its token is removed from Keychain.'))return;off.disabled=true;try{await act({action:'connector_revoke',provider});saved('Disconnected');await refresh();}catch(e){notice(e.message);off.disabled=false;}};
   row.append(label,off);return row;}));
  // Everything else (Google sources, background loops) as a compact list.
- $('#source-status').replaceChildren(...s.sync.filter(x=>!shown.has(x.source)).map(x=>{const d=describe(x);return node('p',(NAMES[x.source]||x.source)+': '+d.text,d.problem?'problem':'');}));
+ $('#source-status').replaceChildren(...s.sync.filter(x=>!shown.has(x.source)).map(x=>{const d=describe(x),mail=s.mail_coverage;let detail='';if(x.source==='gmail'&&mail)detail=mail.pending?' · '+mail.pending+' threads awaiting analysis'+(mail.retrying?' ('+mail.retrying+' retrying)':''):' · '+mail.days+'-day initial scan, then new mail';if(x.source==='calendar')detail=' · '+(s.calendar_scope||'Primary calendar, next 30 days');return node('p',(NAMES[x.source]||x.source)+': '+d.text+detail,d.problem?'problem':'');}));
  renderProjects(s);
  $('#agent-status').textContent=s.agents.filter(a=>a.enabled).map(a=>(a.provider==='claude'?'Claude Code':'Codex')+' · '+a.workspace).join('\n');
  const sourceCount=s.sources.filter(x=>!['model','meeting_model','calendar_write','calendars'].includes(x)).length;

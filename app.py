@@ -1,4 +1,5 @@
 """Loopback desktop backend. Private database; no network listener beyond localhost."""
+import mail_reasoning
 from contextlib import closing, nullcontext
 import fcntl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -240,6 +241,7 @@ def worker(path, connect, stop):
     with closing(connect(path)) as db:
         attention.configure(db,settings())
         attention.migrate(db)
+        attention.review_imported_assignments(db)
     report = lambda name,error: report_loop(path,connect,name,error)
     def sync():
         # Individual source errors are recorded in sync_status by discovery.sync.
@@ -334,6 +336,7 @@ def state(db):
         task['catalog'] = tagging.catalog(db, task['id'])
         task['attention'] = attention.info(db,task['id'])
         task['my_responsibility'] = attention.eligible(db,task['id'])
+        task['in_scope'] = tagging.repository_allowed(db,task['id'])
         extra=db.execute('SELECT * FROM task_extra WHERE task=?',(task['id'],)).fetchone()
         task['description']=extra['description'] if extra else ''
         task['tags']=json.loads(extra['tags']) if extra else []
@@ -352,6 +355,8 @@ def state(db):
             'next':dict(best) if best else None,'plan':planning.morning_plan(db,now),
             'preferences':dict(db.execute('SELECT key,value FROM preference')),
             'sync':[dict(r) for r in db.execute('SELECT * FROM sync_status')],
+            'mail_coverage':mail_reasoning.coverage(db),
+            'calendar_scope':str(len(config.get('calendars') or ['primary']))+' calendar(s), next 30 days',
             'sources':[k for k in config if k not in ('model','meeting_model','activity_model')], 'model':config.get('model'),
             'activity_model':config.get('activity_model'),
             'agents':[dict(r) for r in db.execute('SELECT * FROM agent_connection')],

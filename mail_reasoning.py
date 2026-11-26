@@ -24,7 +24,11 @@ tasks alone, including manually completed tasks. For waiting requests supplied i
 waiting array, a substantive answer from the expected recipient may return
 {"kind":"answered","waiting":"waiting id","message":"message id","quote":"exact answer"}.
 An automated reply, acknowledgement, or promise to answer later is not an answer.
-For adds, also return responsibility: execute, review, decide, follow_up, or informed. Use the project roles to distinguish doing work from overseeing it. Empty actions is valid. Never invent evidence."""
+For adds, also return responsibility: execute, review, decide, follow_up, or informed. Use the project roles to distinguish doing work from overseeing it. For adds, return owner: the exact mailbox owner address only if the obligation is theirs, otherwise null.
+Do not convert vendor announcements, optional invitations, expired registration offers, general advice,
+or conditional instructions ("if you use X") into tasks without evidence that they apply personally.
+Use local_time to reject past one-off opportunities. Do not assign a colleague's promised work to the recipient.
+Empty actions is valid. Never invent evidence."""
 
 
 class VisibleText(HTMLParser):
@@ -151,7 +155,7 @@ def analyze(db, thread, settings, owner, predict=infer):
         FROM mail_task m JOIN task t ON t.id=m.task WHERE m.thread=?""", (tid,))]
     waiting=[dict(r) for r in db.execute("SELECT * FROM waiting WHERE status='waiting'") if r['thread']==thread['id'] or r['thread'].rstrip('/').endswith('/'+thread['id'])]
     import project_brains
-    result = predict(settings, {"project_briefs":project_brains.context(db),"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting}) if msgs else {"actions":[]}
+    result = predict(settings, {"project_briefs":project_brains.context(db),"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting,"local_time":__import__("datetime").datetime.now().astimezone().isoformat()}) if msgs else {"actions":[]}
     actions = result["actions"]
     if not isinstance(actions, list):
         raise ValueError("invalid actions")
@@ -181,6 +185,8 @@ def analyze(db, thread, settings, owner, predict=infer):
                     db.execute("INSERT INTO source_event(source,key,task,outcome,at) VALUES('gmail',?,?,'suggested_completion',?)", (evidence_key,task,time.time()))
                 db.execute("INSERT INTO mail_resolution VALUES(?,?,?)", (task, mid, quote))
             elif action["kind"] == "add":
+                if 'owner' in action and attention.normalize(action['owner']) != attention.normalize(owner):
+                    continue
                 title = action["title"]
                 if not isinstance(title, str) or not 0 < len(title.strip()) <= 300:
                     raise ValueError("invalid title")
@@ -190,7 +196,7 @@ def analyze(db, thread, settings, owner, predict=infer):
                 task = db.execute("INSERT INTO task(title,priority,state,due) VALUES(?,3,'open',?)",
                                   (title, time.time())).lastrowid
                 db.execute("INSERT INTO mail_task VALUES(?,?,?,?)", (tid, mid, quote, task))
-                db.execute('INSERT OR IGNORE INTO ownership VALUES(?,?,?)',(task,owner,msgs[positions[mid]].get('sender') or ''))
+                db.execute('INSERT OR IGNORE INTO ownership VALUES(?,?,?)',(task,owner if attention.self_commitment(quote,msgs[positions[mid]].get('sent')) else '',msgs[positions[mid]].get('sender') or ''))
                 kind=action.get('responsibility','execute')
                 if not isinstance(kind,str) or kind not in attention.KINDS:raise ValueError('Invalid responsibility')
                 canonical=attention.candidate(db,task,'gmail',kind=kind)
@@ -216,10 +222,13 @@ def sync(db, session, settings):
     profile = get("profile")
     owner = profile["emailAddress"]
     history_sync.update(db,get,owner,profile["historyId"])
-    waiting = db.execute("""SELECT thread FROM gmail_work WHERE owner=? AND NOT EXISTS(
-        SELECT 1 FROM mail_retry WHERE mail_retry.thread=? || '/' || gmail_work.thread
-        AND retry_at>?) ORDER BY rowid LIMIT 4""",(owner,owner,time.time())).fetchall()
+    waiting = db.execute("""SELECT w.thread FROM gmail_work w LEFT JOIN gmail_priority p ON p.owner=w.owner AND p.thread=w.thread
+        WHERE w.owner=? AND NOT EXISTS(
+        SELECT 1 FROM mail_retry WHERE mail_retry.thread=? || '/' || w.thread
+        AND retry_at>?) ORDER BY COALESCE(p.priority,0) DESC,w.rowid LIMIT 12""",(owner,owner,time.time())).fetchall()
+    started=time.monotonic()
     for (key,) in waiting:
+        if time.monotonic()-started>120:break
         try:
             thread = get("threads/" + key, format="full")
             analyze(db, thread, settings, owner)
@@ -236,3 +245,14 @@ def sync(db, session, settings):
                 continue
         with db:
             db.execute("DELETE FROM gmail_work WHERE owner=? AND thread=?", (owner,key))
+            db.execute("DELETE FROM mail_retry WHERE thread=?",(owner+"/"+key,))
+            db.execute("DELETE FROM gmail_priority WHERE owner=? AND thread=?",(owner,key))
+
+
+def coverage(db):
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='gmail_work'").fetchone():
+        return {'pending':0,'retrying':0,'days':0}
+    pending=db.execute('SELECT count(*) FROM gmail_work').fetchone()[0]
+    retrying=db.execute("SELECT count(*) FROM gmail_work w JOIN mail_retry r ON r.thread=w.owner||'/'||w.thread").fetchone()[0]
+    scan=db.execute('SELECT MIN(days) FROM gmail_scan').fetchone()[0] if db.execute("SELECT 1 FROM sqlite_master WHERE name='gmail_scan'").fetchone() else 7
+    return {'pending':pending,'retrying':retrying,'days':scan or 0}

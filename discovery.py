@@ -138,7 +138,7 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
             events = []
             for calendar in calendars or ['primary']:
                 url = 'https://www.googleapis.com/calendar/v3/calendars/'+quote(calendar,safe='')+'/events'
-                events.extend((calendar,e) for e in pages(url, 'items', singleEvents='true', timeMin=stamp(now),timeMax=stamp(now+7*86400)))
+                events.extend((calendar,e) for e in pages(url, 'items', singleEvents='true', timeMin=stamp(now),timeMax=stamp(now+30*86400)))
             for calendar, event in events:
                 start = event.get("start", {}).get("dateTime")
                 declined = any(a.get("self") and a.get("responseStatus") == "declined"
@@ -177,6 +177,16 @@ TRACKERS = {'tasks','apple_reminders','todoist','asana','jira','linear','microso
 def reconcile(db, source, rows, now):
     # Fetch the entire snapshot successfully before expiring any previous entries.
     rows = list(rows)
+    if source in ('github','github_reviews'):
+        import tagging
+        # Unknown repositories stay at the provider. A future project clue admits them.
+        # Keep manually catalogued tasks even when their titles do not name the project.
+        def allowed(row):
+            key,title,_ = row
+            if not key.startswith('https://github.com/'):return True
+            existing = db.execute('SELECT task_id FROM discovered WHERE source=? AND key=?', (source,key)).fetchone() if db.execute("SELECT 1 FROM sqlite_master WHERE name='discovered'").fetchone() else None
+            return tagging.repository_allowed(db,existing[0]) if existing else bool(tagging.repository_project(db,key,title))
+        rows = [row for row in rows if allowed(row)]
     with db:
         db.execute("""CREATE TABLE IF NOT EXISTS discovered (
             source TEXT, key TEXT, task_id INTEGER, scheduled REAL,
@@ -213,7 +223,7 @@ def reconcile(db, source, rows, now):
             if source not in ('calendar','apple_calendar','outlook_calendar'):
                 import attention
                 if not db.execute('SELECT 1 FROM task_attention WHERE task=?',(task_id,)).fetchone():
-                    attention.record(db,task_id,'accepted','Assigned to your connected source account',source,'review' if source=='github_reviews' else 'execute')
+                    attention.record(db,task_id,'suggested' if source in ('github','github_reviews') else 'accepted','Imported assignment; confirm your responsibility before reminders' if source in ('github','github_reviews') else 'Assigned to your connected source account',source,'review' if source=='github_reviews' else 'execute')
             if source in ('calendar','apple_calendar','outlook_calendar'):
                 import attention
                 if not db.execute('SELECT 1 FROM task_attention WHERE task=?',(task_id,)).fetchone():
@@ -273,6 +283,8 @@ def verify_github_missing(db, settings, source, now):
 
 
 def sync(db):
+    import attention
+    attention.review_imported_assignments(db)
     if not CONFIG.exists():
         return
     config = json.loads(CONFIG.read_text())
