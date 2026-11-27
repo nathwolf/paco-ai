@@ -18,7 +18,14 @@ int appleSources(NSArray *args) {
             finished=NO;
             NSPredicate *predicate=[store predicateForIncompleteRemindersWithDueDateStarting:nil ending:nil calendars:nil];
             [store fetchRemindersMatchingPredicate:predicate completion:^(NSArray<EKReminder *> *items){
-                for(EKReminder *item in items) [rows addObject:@{@"id":item.calendarItemIdentifier,@"title":item.title?:@"Reminder",@"account":item.calendar.source.sourceIdentifier,@"calendar":item.calendar.title?:@"Reminders"}];
+                for(EKReminder *item in items) {
+                    NSDateComponents *due=[item.dueDateComponents copy];
+                    NSCalendar *calendar=[due.calendar copy] ?: [NSCalendar.currentCalendar copy];
+                    if(due.timeZone)calendar.timeZone=due.timeZone;
+                    if(due && due.hour==NSDateComponentUndefined){due.hour=23;due.minute=59;}
+                    NSDate *date=due ? [calendar dateFromComponents:due] : nil;
+                    [rows addObject:@{@"deadline":date ? @(date.timeIntervalSince1970) : NSNull.null,@"id":item.calendarItemIdentifier,@"title":item.title?:@"Reminder",@"account":item.calendar.source.sourceIdentifier,@"calendar":item.calendar.title?:@"Reminders"}];
+                }
                 finished=YES;
             }];
             while(!finished && [limit timeIntervalSinceNow]>0)[NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.05]];

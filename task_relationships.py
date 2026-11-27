@@ -1,6 +1,7 @@
 """Conservative cross-source obligation matching and auditable, lossless task merges."""
 from contextlib import nullcontext
 import hashlib,json,time
+import task_dates
 import attention,models,workflows,tagging
 
 PROMPT='''Match tasks that represent the SAME personal obligation, using source evidence and saved
@@ -42,6 +43,9 @@ def merge(db,keep,other,manual=True,reason='Explicit user merge',commit=True):
             before['channels']=[tuple(r) for r in db.execute('SELECT account,channel,task FROM mattermost_channel_task WHERE task=?',(other,))]
             db.execute('INSERT OR IGNORE INTO mattermost_channel_task SELECT account,channel,? FROM mattermost_channel_task WHERE task=?',(keep,other))
             db.execute('DELETE FROM mattermost_channel_task WHERE task=?',(other,))
+        inherited = db.execute('SELECT deadline FROM details WHERE task=?',(other,)).fetchone()
+        if inherited:
+            task_dates.fill(db,keep,inherited[0])
         extras={r['task']:dict(r) for r in db.execute('SELECT * FROM task_extra WHERE task IN (?,?)',(keep,other))}
         before['extras']=extras
         a=extras.get(keep,{});b=extras.get(other,{})

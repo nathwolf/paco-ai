@@ -334,8 +334,8 @@ def main(argv=None):
             except ValueError:
                 parser.error("use an ISO deadline")
             with db:
-                db.execute("INSERT OR REPLACE INTO details VALUES(?,?,?,?)",
-                           (args.id,args.goal,args.minutes,deadline))
+                fields = {k:v for k,v in (('deadline',deadline),('goal',args.goal)) if v is not None}
+                planning.update_estimate(db,args.id,args.minutes,fields)
             return
         if args.cmd == "plan":
             wait = planning.reason_to_wait(db, now)

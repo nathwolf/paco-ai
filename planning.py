@@ -28,6 +28,15 @@ def initialize(db):
     flow.initialize(db)
 
 
+def update_estimate(db, task, minutes, changes):
+    """An estimate-only edit must preserve both the goal and the deadline."""
+    db.execute("""INSERT INTO details(task,goal,minutes,deadline) VALUES(?,?,?,?)
+        ON CONFLICT(task) DO UPDATE SET minutes=excluded.minutes,
+        goal=CASE WHEN ? THEN excluded.goal ELSE details.goal END,
+        deadline=CASE WHEN ? THEN excluded.deadline ELSE details.deadline END""",
+        (task,changes.get('goal',''),minutes,changes.get('deadline'),'goal' in changes,'deadline' in changes))
+
+
 def setting(db, key, default=""):
     row = db.execute("SELECT value FROM preference WHERE key=?", (key,)).fetchone()
     return row[0] if row else default

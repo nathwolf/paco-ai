@@ -42,6 +42,10 @@ def changes(value):
     parsed=dict(value)
     for key in ('deadline','remind_at'):
         if isinstance(parsed.get(key),str):
+            if key == 'deadline':
+                from task_dates import timestamp
+                parsed[key] = timestamp(parsed[key])
+                continue
             date=datetime.fromisoformat(parsed[key].replace('Z','+00:00'))
             if date.tzinfo is None:raise ValueError('Task dates need a timezone')
             parsed[key]=date.timestamp()

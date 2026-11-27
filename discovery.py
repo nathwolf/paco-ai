@@ -3,6 +3,7 @@ from contextlib import nullcontext
 import argparse
 import json
 import os
+import task_dates
 import projects
 import mail_reasoning
 import shutil
@@ -147,7 +148,7 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
             for group in pages(root + "users/@me/lists", "items"):
                 prefix = root + "lists/" + quote(group["id"], safe="") + "/tasks"
                 for task in pages(prefix, "items", showCompleted="false"):
-                    yield task["selfLink"], task["title"], now
+                    yield task_dates.source_row(task["selfLink"], task["title"], now, (task.get("due") or "")[:10])
         elif source == "calendar":
             stamp = lambda t: datetime.fromtimestamp(t, timezone.utc).isoformat()
             events = []
@@ -221,7 +222,7 @@ def reconcile(db, source, rows, now, commit=True):
         # Unknown repositories stay at the provider. A future project clue admits them.
         # Keep manually catalogued tasks even when their titles do not name the project.
         def allowed(row):
-            key,title,_ = row
+            key,title = row[:2]
             if not key.startswith('https://github.com/'):return True
             existing = db.execute('SELECT task_id FROM discovered WHERE source=? AND key=?', (source,key)).fetchone() if db.execute("SELECT 1 FROM sqlite_master WHERE name='discovered'").fetchone() else None
             return tagging.repository_allowed(db,existing[0]) if existing else bool(tagging.repository_project(db,key,title))
@@ -239,7 +240,9 @@ def reconcile(db, source, rows, now, commit=True):
                     db.execute('UPDATE source_event SET key=? WHERE source=? AND key=?',(key,source,legacy))
         previous = {r[0]: r[1:] for r in db.execute(
             "SELECT key,task_id,scheduled FROM discovered WHERE source=?", (source,))}
-        for key, title, due in rows:
+        db.execute('CREATE TABLE IF NOT EXISTS source_deadline(source TEXT,key TEXT,value REAL,PRIMARY KEY(source,key))')
+        for incoming in rows:
+            key,title,due = incoming[:3]
             old = previous.pop(key, None)
             if old:
                 task_id, scheduled = old
@@ -259,6 +262,14 @@ def reconcile(db, source, rows, now, commit=True):
                                     (title, due))
                 db.execute("INSERT INTO discovered VALUES(?,?,?,?)", (source, key, cursor.lastrowid, due))
                 task_id = cursor.lastrowid
+            prior_date = db.execute('SELECT value FROM source_deadline WHERE source=? AND key=?',(source,key)).fetchone()
+            deadline = incoming[3] if len(incoming)>3 else None
+            if prior_date and prior_date[0] != deadline:
+                db.execute('UPDATE details SET deadline=? WHERE task=? AND deadline IS ?', (deadline,task_id,prior_date[0]))
+            elif not prior_date:
+                task_dates.fill(db,task_id,deadline)
+            if prior_date or deadline is not None:
+                db.execute('INSERT OR REPLACE INTO source_deadline VALUES(?,?,?)',(source,key,deadline))
             if source not in ('calendar','apple_calendar','outlook_calendar'):
                 import attention
                 if not db.execute('SELECT 1 FROM task_attention WHERE task=?',(task_id,)).fetchone():
@@ -347,7 +358,7 @@ def sync(db, only=None):
                 executable=Path(__file__).parent/'build/Paco.app/Contents/MacOS/Paco'
                 items=json.loads(subprocess.check_output([str(executable),'--apple','calendar' if source=='apple_calendar' else 'reminders'],text=True,timeout=70))
                 if source=='apple_reminders':
-                    reconcile(db,source,[(i['account']+'/'+i['id'],i['title'],now) for i in items],now)
+                    reconcile(db,source,[(i['account']+'/'+i['id'],i['title'],now,i.get('deadline')) for i in items],now)
                 else:
                     reconcile(db,source,[(i['id'],'Prepare for '+i['title'],i['start']-900) for i in items if not i['all_day'] and i['start']>now],now)
                     with db:

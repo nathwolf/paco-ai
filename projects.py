@@ -1,10 +1,11 @@
 """Read-only project context and assigned Linear issues."""
 from pathlib import Path
+from task_dates import source_row
 import subprocess
 
 LINEAR = """query Assigned($after: String) {
   viewer { id assignedIssues(first: 50, after: $after) {
-    nodes { id identifier title url state { type } }
+    nodes { id identifier title url dueDate state { type } }
     pageInfo { hasNextPage endCursor }
   } }
 }"""
@@ -24,7 +25,7 @@ def linear_rows(token, now):
         page = data["data"]["viewer"]["assignedIssues"]
         for issue in page["nodes"]:
             if issue["state"]["type"] not in ("completed", "canceled"):
-                yield issue["url"], issue["identifier"] + " " + issue["title"], now
+                yield source_row(issue["url"], issue["identifier"] + " " + issue["title"], now, issue.get("dueDate"))
         if not page["pageInfo"]["hasNextPage"]:
             return
         cursor = page["pageInfo"]["endCursor"]

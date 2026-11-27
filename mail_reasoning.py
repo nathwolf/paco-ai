@@ -1,4 +1,5 @@
 """Evidence-backed Gmail task extraction using a configurable chat model."""
+import task_dates
 import history_sync
 import mail_noise
 import argparse
@@ -42,6 +43,11 @@ Being addressed to the owner proves neither importance nor a need for a reminder
 Do retain substantive project work, signatures, required appointment preparation,
 real deadlines and commitments. A short action can still matter. Routine account
 steps can be added manually if the user explicitly asks Paco to track them.
+For an add with an explicit deadline for that action, return deadline (YYYY-MM-DD or ISO datetime with offset)
+and deadline_quote (exact timing text from that message). Resolve relative dates against the message date
+(Unix milliseconds), never the scan date. Exclude dates of unrelated events, applications or other people.
+If later mail gives an existing outstanding task its missing deadline, emit kind="date" with task, message,
+quote, deadline and deadline_quote. Leave uncertain or conflicting timing in notes.
 Empty actions is valid. Never invent evidence."""
 
 
@@ -165,8 +171,8 @@ def analyze(db, thread, settings, owner, predict=infer):
     if db.execute("SELECT 1 FROM mail_revision WHERE thread=? AND version=?", (tid, version)).fetchone():
         return False
     msgs = messages(thread)
-    existing = [dict(row) for row in db.execute("""SELECT t.id,t.title,t.state,m.message
-        FROM mail_task m JOIN task t ON t.id=m.task WHERE m.thread=?""", (tid,))]
+    existing = [dict(row) for row in db.execute("""SELECT t.id,t.title,t.state,m.message,d.deadline
+        FROM mail_task m JOIN task t ON t.id=m.task LEFT JOIN details d ON d.task=t.id WHERE m.thread=?""", (tid,))]
     waiting=[dict(r) for r in db.execute("SELECT * FROM waiting WHERE status='waiting'") if r['thread']==thread['id'] or r['thread'].rstrip('/').endswith('/'+thread['id'])]
     import project_brains
     result = predict(settings, {"responsibility_corrections":attention.corrections(db,settings),"project_briefs":project_brains.context(db),"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting,"local_time":__import__("datetime").datetime.now().astimezone().isoformat()}) if msgs else {"actions":[]}
@@ -181,6 +187,20 @@ def analyze(db, thread, settings, owner, predict=infer):
             if mid not in positions or not isinstance(quote, str) or not quote.strip() or quote not in msgs[positions[mid]]["text"]:
                 raise ValueError("ungrounded evidence")
             if workflows.forgotten(db,'gmail',tid+'/'+mid+'/'+quote):
+                continue
+            deadline = None
+            if action.get('deadline') and action['kind'] in ('add','date'):
+                timing_quote = action.get('deadline_quote')
+                if isinstance(timing_quote,str) and timing_quote.strip() and timing_quote in msgs[positions[mid]]['text']:
+                    try:
+                        deadline = task_dates.timestamp(action['deadline'])
+                    except (TypeError, ValueError):
+                        pass
+            if action['kind']=='date':
+                task = action.get('task')
+                if task in origins and positions[mid] >= positions.get(origins[task],0) and db.execute(
+                        "SELECT 1 FROM task WHERE id=? AND state IN ('open','blocked','focus')",(task,)).fetchone():
+                    task_dates.fill(db,task,deadline)
                 continue
             if action['kind']=='answered':
                 from email.utils import parseaddr
@@ -220,6 +240,7 @@ def analyze(db, thread, settings, owner, predict=infer):
                     continue
                 task = db.execute("INSERT INTO task(title,priority,state,due) VALUES(?,3,'open',?)",
                                   (title, time.time())).lastrowid
+                task_dates.fill(db,task,deadline)
                 if description:
                     db.execute("INSERT OR REPLACE INTO task_extra(task,description,tags) VALUES(?,?,'[]')",(task,description))
                 db.execute("INSERT INTO mail_task VALUES(?,?,?,?)", (tid, mid, quote, task))

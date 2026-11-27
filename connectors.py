@@ -1,6 +1,7 @@
 """Small, independent read-only adapters with account identity and source links.
 Each returns a fully materialized snapshot before reconciliation may change tasks.
 """
+from task_dates import source_row
 import json
 import urllib.parse
 import urllib.request
@@ -124,6 +125,22 @@ def slack_messages(client, account, now):
     return list(found.values())
 
 
+def graph_task_row(url, title, now, due):
+    # Tasks and flag dates are commonly returned with a separate UTC zone.
+    if not due or not due.get('dateTime'):
+        return (url, title, now)
+    from datetime import datetime
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    value = datetime.fromisoformat(due['dateTime'].replace('Z','+00:00'))
+    if value.tzinfo is None:
+        try:
+            zone = ZoneInfo(due['timeZone'])
+        except (KeyError, ZoneInfoNotFoundError):
+            return (url, title, now)
+        value = value.replace(tzinfo=zone)
+    return (url, title, now, value.timestamp())
+
+
 def snapshot(provider, client, account, now):
     rows = []
     if provider == 'todoist':
@@ -133,7 +150,7 @@ def snapshot(provider, client, account, now):
         cursor = None
         while True:
             data = client.get('/tasks',**({'cursor':cursor} if cursor else {}))
-            rows.extend((t.get('url','https://app.todoist.com/app/task/'+str(t['id'])),t['content'],now) for t in data['results'])
+            rows.extend(source_row(t.get('url','https://app.todoist.com/app/task/'+str(t['id'])),t['content'],now,(t.get('deadline') or {}).get('date')) for t in data['results'])
             cursor = data.get('next_cursor')
             if not cursor:
                 break
@@ -144,11 +161,11 @@ def snapshot(provider, client, account, now):
         for workspace in who.get('workspaces',[]):
             offset = None
             while True:
-                params = {'assignee':account,'workspace':workspace['gid'],'completed_since':'now','opt_fields':'name,permalink_url,completed','limit':100}
+                params = {'assignee':account,'workspace':workspace['gid'],'completed_since':'now','opt_fields':'name,permalink_url,completed,due_at,due_on','limit':100}
                 if offset:
                     params['offset'] = offset
                 data = client.get('/tasks',**params)
-                rows.extend((t['permalink_url'],t['name'],now) for t in data['data'] if not t.get('completed'))
+                rows.extend(source_row(t['permalink_url'],t['name'],now,t.get('due_at') or t.get('due_on')) for t in data['data'] if not t.get('completed'))
                 offset = (data.get('next_page') or {}).get('offset')
                 if not offset:
                     break
@@ -158,10 +175,10 @@ def snapshot(provider, client, account, now):
             raise ValueError('Account changed; reconnect Outlook')
         # Explicitly flagged messages only; a message alone is not an obligation.
         path = '/me/messages'
-        params = {'$filter':"flag/flagStatus eq 'flagged'",'$select':'id,subject,webLink','$top':100}
+        params = {'$filter':"flag/flagStatus eq 'flagged'",'$select':'id,subject,webLink,flag','$top':100}
         while True:
             data = client.get(path,**params)
-            rows.extend((m['webLink'],m['subject'],now) for m in data['value'])
+            rows.extend(graph_task_row(m['webLink'],m['subject'],now,(m.get('flag') or {}).get('dueDateTime')) for m in data['value'])
             link = data.get('@odata.nextLink')
             if not link:
                 break
@@ -174,12 +191,12 @@ def snapshot(provider, client, account, now):
             raise ValueError('Jira account changed; reconnect')
         cursor=None
         while True:
-            params={'jql':'assignee = currentUser() AND statusCategory != Done','fields':'summary','maxResults':100}
+            params={'jql':'assignee = currentUser() AND statusCategory != Done','fields':'summary,duedate','maxResults':100}
             if cursor:
                 params['nextPageToken']=cursor
             data=client.get('/search/jql',**params)
             site=client.base.split('/rest/')[0]
-            rows.extend((site+'/browse/'+i['key'],i['key']+' '+i['fields']['summary'],now) for i in data['issues'])
+            rows.extend(source_row(site+'/browse/'+i['key'],i['key']+' '+i['fields']['summary'],now,i['fields'].get('duedate')) for i in data['issues'])
             cursor=data.get('nextPageToken')
             if not cursor:
                 break
@@ -191,7 +208,7 @@ def snapshot(provider, client, account, now):
             page=1
             while True:
                 items=client.get(path,per_page=100,page=page,**params)
-                rows.extend((i['web_url'],prefix+i['title'],now) for i in items)
+                rows.extend(source_row(i['web_url'],prefix+i['title'],now,i.get('due_date')) for i in items)
                 if len(items)<100:
                     break
                 page+=1
@@ -205,7 +222,7 @@ def snapshot(provider, client, account, now):
             if data.get('errors'):
                 raise ValueError('Linear query failed')
             page=data['data']['viewer']['assignedIssues']
-            rows.extend((i['url'],i['identifier']+' '+i['title'],now) for i in page['nodes'] if i['state']['type'] not in ('completed','canceled'))
+            rows.extend(source_row(i['url'],i['identifier']+' '+i['title'],now,i.get('dueDate')) for i in page['nodes'] if i['state']['type'] not in ('completed','canceled'))
             if not page['pageInfo']['hasNextPage']:
                 break
             cursor=page['pageInfo']['endCursor']
@@ -213,8 +230,8 @@ def snapshot(provider, client, account, now):
         if client.get('/me')['id']!=account:
             raise ValueError('Account changed; reconnect Microsoft To Do')
         for group in graph_pages(client,'/me/todo/lists',{'$select':'id,displayName'}):
-            for task in graph_pages(client,'/me/todo/lists/'+urllib.parse.quote(group['id'],safe='')+'/tasks',{'$filter':"status ne 'completed'",'$select':'id,title'}):
-                rows.append(('https://to-do.office.com/tasks/id/'+urllib.parse.quote(task['id'],safe='')+'/details',task['title'],now))
+            for task in graph_pages(client,'/me/todo/lists/'+urllib.parse.quote(group['id'],safe='')+'/tasks',{'$filter':"status ne 'completed'",'$select':'id,title,dueDateTime'}):
+                rows.append(graph_task_row('https://to-do.office.com/tasks/id/'+urllib.parse.quote(task['id'],safe='')+'/details',task['title'],now,task.get('dueDateTime')))
     else:
         raise ValueError('Unsupported read-only adapter')
     return rows

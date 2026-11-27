@@ -7,6 +7,7 @@ from datetime import datetime
 import attention
 import models
 import project_brains
+import task_dates
 import tagging
 import workflows
 
@@ -104,21 +105,25 @@ def sync(db, config, complete=None, now=None):
         for event in contexts:
             row=db.execute('SELECT payload FROM calendar_task_context WHERE event=?',(event['id'],)).fetchone()
             if not row or fingerprint(json.loads(row[0]))!=fingerprint(event):return 0
-        for event,title,quote,kind,timing,key,target in prepared:
+        for event,title,quote,kind,timing,key,target in sorted(prepared,key=lambda entry:entry[0]['start']):
             if db.execute('SELECT 1 FROM calendar_task_link WHERE event=? AND action=?',(event['id'],key)).fetchone():continue
             evidence_key=event['id']+'/'+key
             if workflows.forgotten(db,'calendar',evidence_key):continue
             # Preserve explicit dismissals/completions and do not recreate the same source wording.
             if db.execute('''SELECT 1 FROM calendar_task_link l JOIN evidence e ON e.task=l.task
                 WHERE l.event=? AND e.source='calendar' AND e.text=?''',(event['id'],quote)).fetchone():continue
+            deadline = None
+            if timing != 'unspecified':
+                deadline = event['end']-1 if event.get('all_day') and timing=='on_event' else event['start']
             if target is not None:
                 if not db.execute('SELECT 1 FROM task WHERE id=?',(target,)).fetchone():continue
+                if attention.eligible(db,target) and db.execute("SELECT 1 FROM task WHERE id=? AND state IN ('open','focus','blocked')",(target,)).fetchone():
+                    task_dates.fill(db,target,deadline)
                 db.execute('INSERT INTO calendar_task_link VALUES(?,?,?)',(event['id'],key,target))
                 workflows.remember(db,'calendar',evidence_key,quote,event.get('url',''),task=target)
                 continue
             task=db.execute("INSERT INTO task(title,priority,state,due) VALUES(?,3,'open',?)",(title,now)).lastrowid
-            if timing!='unspecified':
-                db.execute('INSERT INTO details VALUES(?,?,30,?)',(task,'',event['end']-1 if event.get('all_day') and timing=='on_event' else event['start']))
+            task_dates.fill(db,task,deadline)
             db.execute('INSERT INTO calendar_task_link VALUES(?,?,?)',(event['id'],key,task))
             workflows.remember(db,'calendar',evidence_key,quote,event.get('url',''),task=task)
             project=tagging.hint_result(db,dict(id=task,title=title),tagging.projects(db))[0]

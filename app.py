@@ -33,6 +33,7 @@ import project_brains
 import attention
 import presence
 import mac_focus
+import task_dates
 import calendar_alerts
 import intake
 import company_sync
@@ -359,6 +360,11 @@ def state(db):
         FROM task t LEFT JOIN details d ON d.task=t.id LEFT JOIN urgency u ON u.task=t.id
         ORDER BY t.state='done',critical DESC,t.priority DESC,t.due,t.id''')]
     for task in tasks:
+        task['snoozed_until'] = None
+        if task['due'] and task['due'] > now and task['state']=='open':
+            last = db.execute('SELECT action FROM intervention WHERE task=? ORDER BY at DESC LIMIT 1',(task['id'],)).fetchone()
+            if last and last[0]=='snooze':
+                task['snoozed_until']=task['due']
         task['link'] = links.for_task(db, task['id'])
         task['project'] = tagging.of_task(db, task['id'])
         task['catalog'] = tagging.catalog(db, task['id'])
@@ -542,16 +548,15 @@ def act(db,path,connect,data):
         startup.configure(bool(data['enabled']),path)
         return {'ok':True}
     if action == 'add':
-        title = data['title'].strip()
-        priority = int(data.get('priority',3))
-        if not title or len(title)>500 or priority not in range(1,6):
-            raise ValueError('Enter a task and a priority from 1 to 5')
+        fields = {k: data[k] for k in ('title','description','tags','project','assignee','responsibility','estimate_minutes','deadline') if k in data}
+        fields.update(priority=int(data.get('priority',3)), urgent=bool(data.get('critical',False)))
+        if isinstance(fields.get('deadline'),str):
+            fields['deadline'] = task_dates.timestamp(fields['deadline'])
         with db:
-            ident = db.execute("INSERT INTO task(title,priority,state,due) VALUES(?,?,'open',?)",(title,priority,now)).lastrowid
-            db.execute('INSERT INTO urgency VALUES(?,?)',(ident,bool(data.get('critical'))))
-            workflows.changed(db,'task.created',{'id':ident})
+            result = workspace.edit_task(db, {'changes':fields}, commit=False)
+            workflows.changed(db,'task.created',{'id':result['id']})
         tagging.retag(db)
-        return {'id':ident}
+        return {'id':result['id']}
     if action in ('done','block','resume','start','snooze','archive'):
         task = int(data['id'])
         states = {'done':'done','block':'blocked','resume':'open','start':'focus','snooze':'open','archive':'archived'}
@@ -572,13 +577,14 @@ def act(db,path,connect,data):
             db.execute('INSERT OR REPLACE INTO urgency VALUES(?,?)',(int(data['id']),bool(data['value'])))
         return {'ok':True}
     if action == 'estimate':
-        from datetime import datetime
         minutes = int(data['minutes'])
         if not 1<=minutes<=1440:
             raise ValueError('Estimate must be 1–1440 minutes')
-        deadline = datetime.fromisoformat(data['deadline'].replace('Z','+00:00')).timestamp() if data.get('deadline') else None
+        fields = {k:data[k] for k in ('goal','deadline') if k in data}
+        if data.get('deadline'):
+            fields['deadline'] = task_dates.timestamp(data['deadline'])
         with db:
-            db.execute('INSERT OR REPLACE INTO details VALUES(?,?,?,?)',(int(data['id']),data.get('goal',''),minutes,deadline))
+            planning.update_estimate(db,int(data['id']),minutes,fields)
         return {'ok':True}
     if action == 'preference':
         key,value = data['key'],str(data['value'])
@@ -663,9 +669,9 @@ def act(db,path,connect,data):
             'Holidays allow explicitly urgent work only. Return JSON with answer (string) and optionally proposal (object). '
             'A proposal is a user-reviewable single action, never already executed. Supported proposal shapes: '
             '{action:"preference",key:"mode",value:"holiday"|"work"|"paused"}; '
-            '{action:"add",title:string,priority:1..5}; {action:"estimate",id:number,minutes:number,deadline:ISO8601}; '
+            '{action:"add",title:string,priority:1..5,description?:string,deadline?:ISO date or timestamp with offset,tags?:string[],project?:existing numeric project ID,assignee?:string,estimate_minutes?:number}; {action:"estimate",id:number,minutes:number,deadline:ISO8601}; '
             '{action:"automation_propose",title:string,interval:seconds,trigger:"schedule"}. '
-            'Only propose changes the user requested. Do not infer urgent flags.',payload,'chat')
+            'For adds, put explicit timing in deadline, resolve relative dates using local_time, and retain conditions in description. Only propose changes the user requested. Do not infer urgent flags.',payload,'chat')
         response = {'answer':str(answer.get('answer','No answer returned.')),'metrics':metrics}
         with db:
             db.execute("INSERT INTO conversation(role,text,at) VALUES('user',?,?)",(text,now))
