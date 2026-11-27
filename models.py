@@ -111,6 +111,7 @@ def _cli(args, prompt, timeout):
 
 
 def complete(config, system, data, source, transport=None, runner=None):
+    system += '\nWriting style: never use em dashes in generated prose. Use periods, commas, or parentheses. Preserve exact source identifiers and URLs.'
     provider = config.get("provider")
     if provider not in PROVIDERS:
         raise ValueError("Unsupported model provider")

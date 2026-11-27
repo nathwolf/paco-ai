@@ -154,8 +154,10 @@ def apply_local(db,kind,local,data):
     old_admission=attention.info(db,local)
     attention.record(db,local,data['intake_status'],old_admission['reason'],old_admission['source'],data['responsibility'],lid(data['duplicate_of']))
     current=db.execute('SELECT state,due FROM task WHERE id=?',(local,)).fetchone()
-    state='focus' if current['state']=='focus' and data['status']=='open' else data['status']
     due=data['remind_at'] if data['remind_at'] is not None else current['due']
+    # Preserve a local focus session on an unrelated edit, but rescheduling an
+    # open task is a reminder change, not a multi-day extension of that session.
+    state='focus' if current['state']=='focus' and data['status']=='open' and due==current['due'] else data['status']
     db.execute('UPDATE task SET title=?,priority=?,state=?,due=? WHERE id=?',(data['title'],data['priority'],state,due,local))
     db.execute('INSERT OR REPLACE INTO details VALUES(?,?,?,?)',(local,data['goal'],data['estimate_minutes'],data['deadline']))
     db.execute('INSERT OR REPLACE INTO urgency VALUES(?,?)',(local,data['urgent']))

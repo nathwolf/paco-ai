@@ -126,6 +126,25 @@ class Company(unittest.TestCase):
         row=self.db.execute('SELECT title,state,priority FROM task').fetchone()
         self.assertEqual(tuple(row),('Local correction','focus',1))
         self.assertEqual(self.store.listing(self.user,'task')['items'][0]['data']['title'],'Local correction')
+    def test_remote_reminder_date_ends_old_focus_and_excludes_early_plans(self):
+        import attention,planning
+        self.enable()
+        monday=1796025600
+        with self.db:self.db.execute("INSERT INTO task(title,priority,state,due) VALUES('Pack payment card',3,'focus',10)")
+        attention.decision(self.db,1,'accept')
+        company_sync.sync(self.db,self.transport)
+        remote=self.store.listing(self.user,'task')['items'][0]
+        remote['data']['remind_at']=monday
+        self.store.mutate(self.user,[{k:v for k,v in remote.items() if k!='updated'}],'monday-reminder')
+        company_sync.sync(self.db,self.transport)
+        self.assertEqual(tuple(self.db.execute('SELECT state,due FROM task').fetchone()),('open',monday))
+        self.assertIsNone(planning.reason_to_wait(self.db,monday-1))
+        self.assertEqual(planning.morning_plan(self.db,monday-1),[])
+        self.assertIsNone(planning.next_reminder(self.db,monday-1))
+        self.assertEqual([t['id'] for t in planning.morning_plan(self.db,monday)],[1])
+        self.assertEqual(planning.next_reminder(self.db,monday)['id'],1)
+        company_sync.sync(self.db,self.transport)
+        self.assertEqual(tuple(self.db.execute('SELECT state,due FROM task').fetchone()),('open',monday))
     def test_device_logout_disabled_accounts_and_backup(self):
         base='https://paco.example';asgi,store,auth=create_app(self.root/'device.db',base)
         uid=store.create_user('test','safe-test-password')
