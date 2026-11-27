@@ -92,6 +92,9 @@ def decision(db,task,choice):
 
 def find_duplicate(db,title,owner='',project=None,exclude=None,deadline=None):
     """Merge only exact substantive obligations with compatible ownership/category/date."""
+    # A shortened label is not the full obligation. Let evidence-based matching
+    # compare its notes instead of merging two tasks with the same visible prefix.
+    if title.rstrip().endswith(('…','...')):return None
     title=' '.join(unicodedata.normalize('NFKC',title).casefold().split())
     if len(title)<24:return None
     for row in db.execute('''SELECT t.id,t.title,t.state,o.owner,p.project,d.deadline FROM task t

@@ -1,5 +1,6 @@
 """Evidence-backed Gmail task extraction using a configurable chat model."""
 import history_sync
+import mail_noise
 import argparse
 import base64
 import time
@@ -16,7 +17,10 @@ message, or a question addressed to someone else alone is insufficient. Check la
 messages for delivery, reassignment and cancellation before adding anything. If
 ownership is unclear, omit it. Consult project_briefs for goals, scope and each person’s role; a manager is not automatically the executor of team work. Distinguish an update about work from actual completion.
 Return a JSON object with an actions array. For each new outstanding action return
-{"kind":"add","title":"specific next action","message":"message id","quote":"short exact substring"}.
+{"kind":"add","title":"short next action","description":"conditions and supporting details","message":"message id","quote":"short exact substring"}.
+Keep titles concise, ideally 4 to 9 words and at most 80 characters. Put dates,
+conditions, background and secondary steps in description. Preserve the next action
+and who it involves; do not turn an unconfirmed conditional step into a commitment.
 For an existing task explicitly fulfilled or cancelled return
 {"kind":"close","task":123,"message":"later evidence message id","quote":"exact substring"}.
 Existing task numbers are valid only inside this thread. Leave existing outstanding
@@ -29,6 +33,15 @@ For adds, return owner: the exact mailbox owner address only if the obligation i
 Do not convert vendor announcements, optional invitations, expired registration offers, general advice,
 or conditional instructions ("if you use X") into tasks without evidence that they apply personally.
 Use local_time to reject past one-off opportunities. Do not assign a colleague's promised work to the recipient.
+Track meaningful commitments, not every action mentioned by an email. Omit routine
+email verification, account activation, sign-in links, password reset flows, welcome
+messages, marketing and generic onboarding nudges. Registration alone is not a
+commitment to apply, purchase, book a demo or complete a profile. Only track those
+larger steps when a personal commitment or concrete relevant obligation is evidenced.
+Being addressed to the owner proves neither importance nor a need for a reminder.
+Do retain substantive project work, signatures, required appointment preparation,
+real deadlines and commitments. A short action can still matter. Routine account
+steps can be added manually if the user explicitly asks Paco to track them.
 Empty actions is valid. Never invent evidence."""
 
 
@@ -191,11 +204,24 @@ def analyze(db, thread, settings, owner, predict=infer):
                 title = action["title"]
                 if not isinstance(title, str) or not 0 < len(title.strip()) <= 300:
                     raise ValueError("invalid title")
+                if mail_noise.routine_account_action(title):
+                    continue
+                description=action.get('description','')
+                if not isinstance(description,str) or len(description)>5000:
+                    raise ValueError('invalid description')
+                original=title.strip()
+                if len(original)>90:
+                    # Keep every detail if the model ignores the concise-title rule.
+                    title=original[:87].rsplit(' ',1)[0].rstrip(' ,;:')+'…'
+                    description=original+('\n\n'+description if description else '')
+                else:title=original
                 if db.execute("SELECT 1 FROM mail_task WHERE thread=? AND message=? AND quote=?",
                               (tid, mid, quote)).fetchone():
                     continue
                 task = db.execute("INSERT INTO task(title,priority,state,due) VALUES(?,3,'open',?)",
                                   (title, time.time())).lastrowid
+                if description:
+                    db.execute("INSERT OR REPLACE INTO task_extra(task,description,tags) VALUES(?,?,'[]')",(task,description))
                 db.execute("INSERT INTO mail_task VALUES(?,?,?,?)", (tid, mid, quote, task))
                 db.execute('INSERT OR IGNORE INTO ownership VALUES(?,?,?)',(task,owner if attention.self_commitment(quote,msgs[positions[mid]].get('sent')) else '',msgs[positions[mid]].get('sender') or ''))
                 kind=action.get('responsibility','execute')

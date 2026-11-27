@@ -112,6 +112,7 @@ def _cli(args, prompt, timeout):
 
 def complete(config, system, data, source, transport=None, runner=None):
     system += '\nWriting style: never use em dashes in generated prose. Use periods, commas, or parentheses. Preserve exact source identifiers and URLs.'
+    system += '\nFor new task titles, use a concise next action, ideally 4 to 9 words and no more than 80 characters. Put context, conditions, dates and additional steps in a description or notes field when the requested schema supports one. Preserve the actual next action and named project or person. Do not rename existing tasks unless asked.'
     provider = config.get("provider")
     if provider not in PROVIDERS:
         raise ValueError("Unsupported model provider")

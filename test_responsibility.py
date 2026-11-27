@@ -23,6 +23,16 @@ class AdaptiveResponsibility(unittest.TestCase):
         t=self.task();self.assertTrue(self.apply(t));self.assertTrue(attention.eligible(self.db,t))
         self.assertEqual(attention.corrections(self.db,self.config),[])
         self.assertIn('Automatically added',attention.info(self.db,t)['reason'])
+    def test_personally_addressed_account_email_does_not_become_a_commitment(self):
+        t=self.task('Verify your email to activate your account')
+        self.assertTrue(self.apply(t))
+        self.assertEqual(attention.info(self.db,t)['status'],'reference')
+        self.assertFalse(attention.eligible(self.db,t))
+    def test_explicitly_accepted_small_task_is_kept(self):
+        t=self.task('Verify your email to activate your account')
+        attention.decision(self.db,t,'accept')
+        self.assertFalse(self.apply(t))
+        self.assertTrue(attention.eligible(self.db,t))
     def test_uncertain_foreign_and_ungrounded_decisions_remain_review(self):
         for fields in ({'confidence':'medium'},{'owner':'Juan'},{'quote':'invented'},{'basis':'unclear'}):
             t=self.task();d=self.decision(t);d.update(fields);self.assertFalse(self.apply(t,d));self.assertEqual(attention.info(self.db,t)['status'],'suggested')
