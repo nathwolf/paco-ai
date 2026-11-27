@@ -121,6 +121,7 @@ def banner_payload(db, row, now=None):
     value = _banner_content(db, row, now)
     if value.get('reason')==calendar_alerts.REASON:
         value['calendar_event']=calendar_alerts.payload(db,value['id'],now)
+        value['theme']=planning.setting(db,'theme','system')
         return value
     starts = planning.meeting_start(db, value.get('task'))
     if starts and value.get('reason')!=slacking.REASON:

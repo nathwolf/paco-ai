@@ -205,6 +205,9 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     if([origin.host isEqualToString:@"127.0.0.1"]&&[origin.port isEqual:self.url.port]&&[message.body isKindOfClass:NSString.class]&&[@[@"theme:light",@"theme:dark",@"theme:system"] containsObject:message.body]) {
         NSString *theme=message.body;
         self.window.appearance=[theme isEqual:@"theme:system"]?nil:[NSAppearance appearanceNamed:[theme isEqual:@"theme:dark"]?NSAppearanceNameDarkAqua:NSAppearanceNameAqua];
+        if(self.banner&&[self.currentAlert[@"calendar_event"] isKindOfClass:NSDictionary.class]){
+            NSMutableDictionary *alert=[self.currentAlert mutableCopy];alert[@"theme"]=[theme substringFromIndex:6];self.currentAlert=alert;[self renderCalendarAlert];
+        }
         return;
     }
     if([origin.host isEqualToString:@"127.0.0.1"]&&[origin.port isEqual:self.url.port]&&[message.body isEqual:@"focus-changed"]){[self refreshStatus];return;}
@@ -420,32 +423,42 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     NSRect screen=NSScreen.mainScreen.visibleFrame;CGFloat width=540,height=92;
     NSPanel *panel=[self panel:NSMakeRect(NSMaxX(screen)-width-18,NSMaxY(screen)-height-18,width,height)];
     panel.title=@"Paco calendar reminder";
+    NSString *theme=self.currentAlert[@"theme"];
+    panel.appearance=[theme isEqual:@"light"]?[NSAppearance appearanceNamed:NSAppearanceNameAqua]:[theme isEqual:@"dark"]?[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]:nil;
+    BOOL dark=[[panel.effectiveAppearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua,NSAppearanceNameDarkAqua]] isEqual:NSAppearanceNameDarkAqua];
+    // Match the shared meeting/control palette in web/calm.css, including the soft leaf button edge.
+    NSColor *paper=color(dark?0x222F27:0xFFFEFB),*line=color(dark?0x384B3C:0xDFE7D7);
+    NSColor *ink=color(dark?0xE7EEDF:0x2B3B30),*muted=color(dark?0xA7B6A7:0x657669);
+    NSColor *leaf=color(dark?0xAFCF84:0xB3D87C),*edge=color(dark?0x789653:0x8DAF5C),*onLeaf=color(dark?0x233B19:0x294518);
     NSView *content=[[NSView alloc] initWithFrame:NSMakeRect(0,0,width,height)];content.wantsLayer=YES;
-    content.layer.backgroundColor=NSColor.windowBackgroundColor.CGColor;content.layer.cornerRadius=24;
-    content.layer.borderWidth=1;content.layer.borderColor=NSColor.separatorColor.CGColor;panel.contentView=content;
+    content.layer.backgroundColor=paper.CGColor;content.layer.cornerRadius=20;
+    content.layer.borderWidth=1;content.layer.borderColor=line.CGColor;panel.contentView=content;
     NSImageView *avatar=[[NSImageView alloc] initWithFrame:NSMakeRect(12,20,52,52)];avatar.image=[self imageFor:@"friendly"];avatar.imageScaling=NSImageScaleProportionallyUpOrDown;[content addSubview:avatar];
     NSTextField *title=[NSTextField wrappingLabelWithString:event[@"title"]?:@"Calendar event"];
-    title.font=rounded(13,NSFontWeightSemibold);title.textColor=NSColor.labelColor;title.selectable=YES;
+    title.font=rounded(13,NSFontWeightSemibold);title.textColor=ink;title.selectable=YES;
     title.maximumNumberOfLines=2;title.lineBreakMode=NSLineBreakByWordWrapping;title.cell.truncatesLastVisibleLine=YES;
-    title.toolTip=title.stringValue;title.frame=NSMakeRect(74,46,252,34);[content addSubview:title];
+    CGFloat titleHeight=MIN(34,ceil([title.cell cellSizeForBounds:NSMakeRect(0,0,252,1000)].height));
+    title.toolTip=title.stringValue;title.frame=NSMakeRect(74,47,252,titleHeight);[content addSubview:title];
     NSDateFormatter *formatter=[NSDateFormatter new];formatter.timeStyle=NSDateFormatterShortStyle;formatter.dateStyle=NSDateFormatterNoStyle;
     NSTimeInterval start=[event[@"start"] doubleValue],end=[event[@"end"] doubleValue];
     NSInteger minutes=MAX(0,(NSInteger)ceil((start-NSDate.date.timeIntervalSince1970)/60));
     NSString *when=minutes?[NSString stringWithFormat:@"In %ld min",(long)minutes]:@"Now";
     NSString *times=[NSString stringWithFormat:@"%@ · %@–%@",when,[formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:start]],[formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:end]]];
-    NSTextField *detail=[NSTextField labelWithString:times];detail.font=rounded(11,NSFontWeightMedium);detail.textColor=NSColor.secondaryLabelColor;detail.selectable=YES;detail.frame=NSMakeRect(74,25,252,16);[content addSubview:detail];
+    NSImageView *calendar=[[NSImageView alloc] initWithFrame:NSMakeRect(74,25,13,14)];calendar.image=[NSImage imageWithSystemSymbolName:@"calendar" accessibilityDescription:@"Calendar"];calendar.contentTintColor=muted;[content addSubview:calendar];
+    NSTextField *detail=[NSTextField labelWithString:times];detail.font=rounded(11,NSFontWeightMedium);detail.textColor=muted;detail.selectable=YES;detail.frame=NSMakeRect(92,25,234,16);[content addSubview:detail];
     BOOL call=[event[@"join_url"] isKindOfClass:NSString.class];
     NSButton *join=[NSButton buttonWithTitle:call?@"Join and transcribe":@"Open calendar" target:self action:call?@selector(joinCalendarAndTranscribe):@selector(openCalendarEvent)];
-    join.bordered=NO;join.wantsLayer=YES;join.layer.backgroundColor=color(0x167BD1).CGColor;join.layer.cornerRadius=17;
-    join.font=rounded(12,NSFontWeightSemibold);join.contentTintColor=NSColor.whiteColor;join.frame=NSMakeRect(338,28,166,36);
+    NSView *buttonEdge=[[NSView alloc] initWithFrame:NSMakeRect(338,26,166,38)];buttonEdge.wantsLayer=YES;buttonEdge.layer.backgroundColor=edge.CGColor;buttonEdge.layer.cornerRadius=12;[content addSubview:buttonEdge];
+    join.bordered=NO;join.wantsLayer=YES;join.layer.backgroundColor=leaf.CGColor;join.layer.cornerRadius=12;
+    join.font=rounded(12,NSFontWeightSemibold);join.contentTintColor=onLeaf;join.frame=NSMakeRect(338,28,166,36);
     join.toolTip=call?@"Open the call and transcribe microphone and system audio locally. Audio is not saved.":@"Open this calendar event";[content addSubview:join];
     if(call){
-        NSPopUpButton *more=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(507,29,23,34) pullsDown:YES];more.bordered=NO;[more addItemWithTitle:@"⌄"];
+        NSPopUpButton *more=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(507,29,23,34) pullsDown:YES];more.bordered=NO;more.contentTintColor=muted;[more addItemWithTitle:@"⌄"];
         [more addItemWithTitle:@"Join without transcription"];more.lastItem.target=self;more.lastItem.action=@selector(joinCalendarOnly);
         [more addItemWithTitle:@"Open meeting notes"];more.lastItem.target=self;more.lastItem.action=@selector(showMeetings);
         [more setAccessibilityLabel:@"Meeting options"];[content addSubview:more];
     }
-    NSButton *close=[NSButton buttonWithTitle:@"×" target:self action:@selector(dismiss)];close.bordered=NO;close.contentTintColor=NSColor.secondaryLabelColor;close.frame=NSMakeRect(512,65,20,20);[close setAccessibilityLabel:@"Dismiss calendar reminder"];[content addSubview:close];
+    NSButton *close=[NSButton buttonWithTitle:@"×" target:self action:@selector(dismiss)];close.bordered=NO;close.font=rounded(18,NSFontWeightSemibold);close.contentTintColor=muted;close.frame=NSMakeRect(512,65,20,20);[close setAccessibilityLabel:@"Dismiss calendar reminder"];[content addSubview:close];
     self.banner=panel;[panel orderFrontRegardless];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,60*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(self.banner==panel)[self dismiss];});
 }
