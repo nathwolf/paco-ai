@@ -40,6 +40,14 @@ class CalendarSync(unittest.TestCase):
   self.assertEqual(self.session.get.call_args_list[0].kwargs['params']['showHidden'],'true')
   self.inventory.append(dict(id='new',summary='New calendar',accessRole='reader'));self.events['new']=[]
   self.assertEqual(self.sync()['calendars'],3)
+ def test_call_links_are_kept_instead_of_google_event_page(self):
+  for fields,url in [({'conferenceData':{'entryPoints':[{'entryPointType':'video','uri':'https://meet.google.com/abc-defg-hij'}]}},'https://meet.google.com/abc-defg-hij'),
+                     ({'description':'Join <a href="https://teams.microsoft.com/meet/123?p=key">Teams</a>'},'https://teams.microsoft.com/meet/123?p=key'),
+                     ({'location':'https://us02web.zoom.us/j/123?pwd=key'},'https://us02web.zoom.us/j/123?pwd=key')]:
+   with self.subTest(url=url):
+    self.events['primary']=[dict(self.event,summary='Project call',htmlLink='https://calendar.google.com/event',**fields)]
+    self.sync()
+    self.assertEqual(self.db.execute('SELECT url FROM calendar_event').fetchone()[0],url)
  def test_list_pagination_and_freebusy_inventory(self):
   first=Mock(status_code=200);first.json.return_value={'items':self.inventory[:1],'nextPageToken':'page2'}
   second=Mock(status_code=200);second.json.return_value={'items':self.inventory[1:]+[dict(id='limited',summary='Private availability',accessRole='freeBusyReader')]}

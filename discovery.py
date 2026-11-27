@@ -183,12 +183,14 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
                         return parsed.replace(tzinfo=ZoneInfo(zone)).timestamp() if zone else parsed.timestamp()
                     context_out.append(calendar_action_context(event,calendar,day_time(event['start']['date']),day_time(event['end']['date']),True))
                 if start and not declined and event.get("status") != "cancelled":
+                    import calendar_alerts
+                    call_url=calendar_alerts.join_url(event)
                     begins = datetime.fromisoformat(start.replace("Z", "+00:00")).timestamp()
                     ends = event.get("end", {}).get("dateTime")
                     if events_out is not None and ends:
                         events_out.append((calendar+':'+event['id'],calendar,event.get('summary','Meeting'),begins,
                             datetime.fromisoformat(ends.replace('Z','+00:00')).timestamp(),
-                            event.get('hangoutLink') or event.get('htmlLink',''),event.get('etag',''),
+                            call_url or event.get('htmlLink',''),event.get('etag',''),
                             json.dumps([a.get('email','') for a in event.get('attendees',[])])))
                     if people_out is not None and ends:
                         import meeting_identity
@@ -198,7 +200,7 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
                     if intervals is not None and ends and own_presence and event.get("transparency") != "transparent":
                         import meeting_identity
                         kind=meeting_identity.non_meeting_reason(
-                            {'title':event.get('summary','Meeting'),'url':event.get('hangoutLink') or event.get('htmlLink','')},
+                            {'title':event.get('summary','Meeting'),'url':call_url or event.get('htmlLink','')},
                             meeting_identity.normalize_people(event.get('attendees',[])))
                         # A scheduled errand is something to remind the user about,
                         # not a meeting that should suppress its own reminder.

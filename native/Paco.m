@@ -41,6 +41,7 @@ int captureContext(NSArray *args);
 @property NSMenuItem *focusDay;
 @property BOOL resting;
 @property BOOL quietFocus;
+@property BOOL startingMeeting;
 @property BOOL composing;
 @property BOOL replying;
 @property NSTextField *replyField;
@@ -260,17 +261,42 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     for(NSDictionary *event in state[@"calendar_candidates"])if([event[@"id"] isEqual:events.selectedItem.representedObject]){NSString *host=[NSURL URLWithString:event[@"url"]].host.lowercaseString;if([host isEqual:@"zoom.us"]||[host hasSuffix:@".zoom.us"])[audioSource selectItemAtIndex:1];}
     [audioSource setAccessibilityLabel:@"Call audio source"];[fields addSubview:audioSource];alert.accessoryView=fields;
     [NSApp activateIgnoringOtherApps:YES];NSModalResponse choice=[alert runModal];if(choice==NSAlertThirdButtonReturn)return;
-    self.meetingStart.enabled=NO;
-    [self meetingRequest:@{@"action":@"meeting_start",@"title":title.stringValue.length?title.stringValue:@"Meeting",@"microphone_only":@(choice==NSAlertSecondButtonReturn),@"calendar_event":events.selectedItem.representedObject?:@"",@"speaker_source":audioSource.indexOfSelectedItem==1?@"zoom":@"none"} completion:^(NSDictionary *result,NSString *error){dispatch_async(dispatch_get_main_queue(),^{
-        self.meetingStart.enabled=YES;if(error){[self showMeetings];NSAlert *a=[NSAlert new];a.messageText=error;[a runModal];return;}
-        PacoMeetingCapture *capture=[PacoMeetingCapture new];capture.ident=result[@"id"];capture.zoomSpeakers=[result[@"zoom_speakers"] boolValue];capture.zoomAudio=audioSource.indexOfSelectedItem==1;self.meetingCapture=capture;
+    [self startCaptureWithRequest:@{@"action":@"meeting_start",@"title":title.stringValue.length?title.stringValue:@"Meeting",@"microphone_only":@(choice==NSAlertSecondButtonReturn),@"calendar_event":events.selectedItem.representedObject?:@"",@"speaker_source":audioSource.indexOfSelectedItem==1?@"zoom":@"none"} systemAudio:choice==NSAlertFirstButtonReturn zoomAudio:audioSource.indexOfSelectedItem==1];
+}
+- (void)startCaptureWithRequest:(NSDictionary *)request systemAudio:(BOOL)system zoomAudio:(BOOL)zoom {
+    if(self.meetingCapture||self.startingMeeting)return;
+    self.startingMeeting=YES;self.meetingStart.enabled=NO;
+    [self meetingRequest:request completion:^(NSDictionary *result,NSString *error){dispatch_async(dispatch_get_main_queue(),^{
+        self.startingMeeting=NO;self.meetingStart.enabled=YES;
+        if(error){[self showMeetings];NSAlert *a=[NSAlert new];a.messageText=error;[a runModal];return;}
+        PacoMeetingCapture *capture=[PacoMeetingCapture new];capture.ident=result[@"id"];capture.zoomSpeakers=[result[@"zoom_speakers"] boolValue];capture.zoomAudio=zoom;self.meetingCapture=capture;
         __weak PacoApp *weakSelf=self;
         capture.send=^(NSDictionary *body,void (^done)(BOOL)){[weakSelf meetingRequest:body completion:^(NSDictionary *r,NSString *e){done(e==nil);}];};
         capture.failed=^(NSString *message){dispatch_async(dispatch_get_main_queue(),^{[weakSelf.meetingCapture reportGap:message];[weakSelf stopMeeting];[weakSelf present:@{@"message":message,@"mood":@"friendly",@"reason":@"Meeting interrupted"}];});};
         [self meetingButtons];
-        [capture startWithSystemAudio:choice==NSAlertFirstButtonReturn completion:^(NSString *error){if(error)dispatch_async(dispatch_get_main_queue(),^{[capture reportGap:error];[self stopMeeting];NSAlert *a=[NSAlert new];a.messageText=error;[a runModal];});}];
+        [capture startWithSystemAudio:system completion:^(NSString *error){dispatch_async(dispatch_get_main_queue(),^{
+            if(error){[capture reportGap:error];[self stopMeeting];NSAlert *a=[NSAlert new];a.messageText=error;[a runModal];}
+            else if([result[@"join_url"] isKindOfClass:NSString.class])[self openLink:result[@"join_url"]];
+        });}];
     });}];
 }
+- (void)joinCalendarAndTranscribe {
+    NSNumber *ident=self.currentAlert[@"id"];
+    if(!ident||self.startingMeeting||self.meetingCapture)return;
+    [self dismiss];
+    // All system audio works for browser calls as well as Teams and Zoom apps,
+    // even when the call app has not launched yet. No bot enters the meeting.
+    [self startCaptureWithRequest:@{@"action":@"calendar_join",@"notification":ident} systemAudio:YES zoomAudio:NO];
+}
+- (void)joinCalendarOnly {
+    NSString *url=self.currentAlert[@"calendar_event"][@"join_url"];
+    [self dismiss];[self openLink:url];
+}
+- (void)openCalendarEvent {
+    id url=self.currentAlert[@"calendar_event"][@"calendar_url"];
+    [self dismiss];[self openLink:[url isKindOfClass:NSString.class]&&[url length]?url:@"paco-app:com.apple.iCal"];
+}
+
 - (void)pauseMeeting {
     PacoMeetingCapture *capture=self.meetingCapture;if(!capture)return;
     BOOL resume=capture.paused;
@@ -388,8 +414,44 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     [button setAccessibilityLabel:title];[box addSubview:button];[content addSubview:box];
     return button;
 }
+- (void)renderCalendarAlert {
+    NSDictionary *event=self.currentAlert[@"calendar_event"];
+    [self.banner orderOut:nil];self.task=nil;
+    NSRect screen=NSScreen.mainScreen.visibleFrame;CGFloat width=540,height=92;
+    NSPanel *panel=[self panel:NSMakeRect(NSMaxX(screen)-width-18,NSMaxY(screen)-height-18,width,height)];
+    panel.title=@"Paco calendar reminder";
+    NSView *content=[[NSView alloc] initWithFrame:NSMakeRect(0,0,width,height)];content.wantsLayer=YES;
+    content.layer.backgroundColor=NSColor.windowBackgroundColor.CGColor;content.layer.cornerRadius=24;
+    content.layer.borderWidth=1;content.layer.borderColor=NSColor.separatorColor.CGColor;panel.contentView=content;
+    NSImageView *avatar=[[NSImageView alloc] initWithFrame:NSMakeRect(12,20,52,52)];avatar.image=[self imageFor:@"friendly"];avatar.imageScaling=NSImageScaleProportionallyUpOrDown;[content addSubview:avatar];
+    NSTextField *title=[NSTextField wrappingLabelWithString:event[@"title"]?:@"Calendar event"];
+    title.font=rounded(13,NSFontWeightSemibold);title.textColor=NSColor.labelColor;title.selectable=YES;
+    title.maximumNumberOfLines=2;title.lineBreakMode=NSLineBreakByWordWrapping;title.cell.truncatesLastVisibleLine=YES;
+    title.toolTip=title.stringValue;title.frame=NSMakeRect(74,46,252,34);[content addSubview:title];
+    NSDateFormatter *formatter=[NSDateFormatter new];formatter.timeStyle=NSDateFormatterShortStyle;formatter.dateStyle=NSDateFormatterNoStyle;
+    NSTimeInterval start=[event[@"start"] doubleValue],end=[event[@"end"] doubleValue];
+    NSInteger minutes=MAX(0,(NSInteger)ceil((start-NSDate.date.timeIntervalSince1970)/60));
+    NSString *when=minutes?[NSString stringWithFormat:@"In %ld min",(long)minutes]:@"Now";
+    NSString *times=[NSString stringWithFormat:@"%@ · %@–%@",when,[formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:start]],[formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:end]]];
+    NSTextField *detail=[NSTextField labelWithString:times];detail.font=rounded(11,NSFontWeightMedium);detail.textColor=NSColor.secondaryLabelColor;detail.selectable=YES;detail.frame=NSMakeRect(74,25,252,16);[content addSubview:detail];
+    BOOL call=[event[@"join_url"] isKindOfClass:NSString.class];
+    NSButton *join=[NSButton buttonWithTitle:call?@"Join and transcribe":@"Open calendar" target:self action:call?@selector(joinCalendarAndTranscribe):@selector(openCalendarEvent)];
+    join.bordered=NO;join.wantsLayer=YES;join.layer.backgroundColor=color(0x167BD1).CGColor;join.layer.cornerRadius=17;
+    join.font=rounded(12,NSFontWeightSemibold);join.contentTintColor=NSColor.whiteColor;join.frame=NSMakeRect(338,28,166,36);
+    join.toolTip=call?@"Open the call and transcribe microphone and system audio locally. Audio is not saved.":@"Open this calendar event";[content addSubview:join];
+    if(call){
+        NSPopUpButton *more=[[NSPopUpButton alloc] initWithFrame:NSMakeRect(507,29,23,34) pullsDown:YES];more.bordered=NO;[more addItemWithTitle:@"⌄"];
+        [more addItemWithTitle:@"Join without transcription"];more.lastItem.target=self;more.lastItem.action=@selector(joinCalendarOnly);
+        [more addItemWithTitle:@"Open meeting notes"];more.lastItem.target=self;more.lastItem.action=@selector(showMeetings);
+        [more setAccessibilityLabel:@"Meeting options"];[content addSubview:more];
+    }
+    NSButton *close=[NSButton buttonWithTitle:@"×" target:self action:@selector(dismiss)];close.bordered=NO;close.contentTintColor=NSColor.secondaryLabelColor;close.frame=NSMakeRect(512,65,20,20);[close setAccessibilityLabel:@"Dismiss calendar reminder"];[content addSubview:close];
+    self.banner=panel;[panel orderFrontRegardless];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,60*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(self.banner==panel)[self dismiss];});
+}
 - (void)renderAlert {
     NSDictionary *value=self.currentAlert;
+    if([value[@"calendar_event"] isKindOfClass:NSDictionary.class]){[self renderCalendarAlert];return;}
     [self.banner orderOut:nil];
     // Layout in points from the top-left; AppKit's origin is bottom-left, so y = height - top - itemHeight.
     CGFloat height=self.composing?256:150;

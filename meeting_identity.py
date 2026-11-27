@@ -53,7 +53,7 @@ def non_meeting_reason(event,people):
     if not title or re.fullmatch(r'x+',title):return 'Calendar block'
     try:host=(urlsplit(event['url'] or '').hostname or '').lower()
     except ValueError:host=''
-    call=host=='meet.google.com' or host=='teams.microsoft.com' or host=='teams.live.com' or host=='zoom.us' or host.endswith('.zoom.us')
+    call=host=='meet.google.com' or host in ('teams.microsoft.com','teams.live.com','teams.cloud.microsoft') or host=='zoom.us' or host.endswith('.zoom.us')
     if call or any(not p['self'] for p in people):return None
     if re.match(r'^(print|imprimir|buy|comprar|pick up|recoger)\b',title) or (re.match(r'^(get|take|sacar)\b',title) and re.search(r'\b(photos|photo|fotos|foto)\b',title)):
         return 'Personal task'

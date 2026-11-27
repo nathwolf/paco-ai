@@ -68,6 +68,21 @@ class HTTP(unittest.TestCase):
         with paco.connect(self.path) as db:mac_focus.observe(db,False)
         self.assertFalse(json.load(self.request('/api/companion'))['quiet_focus'])
         self.assertEqual(json.load(self.request('/api/banner'))['message'],'Focus test')
+    def test_calendar_banner_at_start_survives_own_busy_time_but_not_pause_or_cancellation(self):
+        import time,calendar_alerts
+        now=time.time()
+        with paco.connect(self.path) as db:
+            db.execute("INSERT INTO calendar_event VALUES('call','work','Review',?,?,?,'','[]')",(now-1,now+1800,'https://teams.microsoft.com/meet/123456789'))
+            db.execute('INSERT INTO busy VALUES(?,?)',(now-1,now+1800));db.commit()
+            calendar_alerts.queue(db,now)
+        banner=json.load(self.request('/api/banner'))
+        self.assertEqual(banner['calendar_event']['provider'],'Teams')
+        with paco.connect(self.path) as db:db.execute("INSERT INTO preference VALUES('mode','paused')")
+        self.assertIsNone(json.load(self.request('/api/banner')))
+        with paco.connect(self.path) as db:
+            db.execute("DELETE FROM preference WHERE key='mode'")
+            db.execute("DELETE FROM calendar_event WHERE id='call'")
+        self.assertIsNone(json.load(self.request('/api/banner')))
     def test_session_suppresses_queued_urgent_alert_and_survives_state_refresh(self):
         import time
         with paco.connect(self.path) as db:

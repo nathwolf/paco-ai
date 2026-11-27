@@ -33,6 +33,7 @@ import project_brains
 import attention
 import presence
 import mac_focus
+import calendar_alerts
 import intake
 import company_sync
 import workspace
@@ -55,6 +56,7 @@ SETTINGS_LOCK = threading.RLock()
 
 
 def initialize(db):
+    calendar_alerts.initialize(db)
     import recurring_tasks
     recurring_tasks.initialize(db)
     import calendar_tasks
@@ -117,6 +119,9 @@ def labels(db):
 def banner_payload(db, row, now=None):
     """A queued notification plus what the native banner draws: chips, title, nudge, wording and where OPEN goes."""
     value = _banner_content(db, row, now)
+    if value.get('reason')==calendar_alerts.REASON:
+        value['calendar_event']=calendar_alerts.payload(db,value['id'],now)
+        return value
     starts = planning.meeting_start(db, value.get('task'))
     if starts and value.get('reason')!=slacking.REASON:
         spanish = planning.setting(db,'language','en')=='es'
@@ -314,6 +319,7 @@ def worker(path, connect, stop):
             recurring_tasks.advance(db)
             flow.sample(db)
             now = time.time()
+            calendar_alerts.queue(db,now)
             meetings.purge(db,now)
             slacking.purge(db,now)
             day=time.strftime('%Y-%m-%d',time.localtime(now))
@@ -437,6 +443,11 @@ def act(db,path,connect,data):
         return meeting_audio.prepare()
     if action=='meeting_start':
         return meeting_audio.start(path,connect,data,settings().get('meeting_model') or settings().get('model'))
+    if action=='calendar_join':
+        event=calendar_alerts.payload(db,int(data['notification']),now)
+        if not event or not event['join_url']:raise ValueError('This meeting changed or has no supported join link. Open Meetings to check it.')
+        result=meeting_audio.start(path,connect,{'title':event['title'],'calendar_event':event['id'],'microphone_only':False,'speaker_source':'none'},settings().get('meeting_model') or settings().get('model'))
+        return dict(result,join_url=event['join_url'])
     if action=='meeting_audio':
         return meeting_audio.audio(path,data)
     if action=='meeting_control':
@@ -918,7 +929,10 @@ def make_server(path,connect,port=0):
                     if workspace.active(db) or mac_focus.active(db):return self.respond(None)
                     flow.sample(db)
                     now = time.time()
-                    for row in db.execute('SELECT * FROM notification WHERE shown IS NULL AND created>? ORDER BY id',(now-300,)):
+                    for row in db.execute('SELECT * FROM notification WHERE shown IS NULL AND created>? ORDER BY (reason=?) DESC,id',(now-300,calendar_alerts.REASON)):
+                        if row['reason']==calendar_alerts.REASON:
+                            if not calendar_alerts.allowed(db,now) or not calendar_alerts.event_for_alert(db,row['id'],now):continue
+                            return self.respond(banner_payload(db,row,now))
                         if row['reason']==slacking.REASON:
                             flow.sample(db,force=True)
                             if not slacking.delivery_allowed(db,row['id'],time.time()):

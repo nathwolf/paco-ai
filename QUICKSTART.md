@@ -482,7 +482,29 @@ Paco does not create a pile of weekly duplicates. Explicit schedules take preced
 over rescheduling of the original calendar evidence. Calendar events themselves are
 not edited. The desktop needs to run for this local recurrence to advance.
 
-### macOS Focus
+### Calendar reminders and joining calls
+
+Paco shows a compact reminder 10 minutes before a timed calendar event and again
+at its start. These are calendar notifications, not new personal tasks. It skips
+placeholder entries such as `x`, focus blocks, declined/removed events and shared
+calendar events that do not involve you. Paco focus sessions and paused reminders
+still silence these alerts. Each event occurrence is notified once per stage;
+moving it between Google calendars preserves that history.
+
+Supported Google Meet, Teams and Zoom links get **Join and transcribe** plus a
+**Join without transcription** menu option. The link can come from conference
+details, the location or the invitation description. Ordinary events get **Open
+calendar**. The join action rechecks the current event before starting capture,
+so a removed or rescheduled notification cannot start an obsolete meeting.
+
+Clicking **Join and transcribe** starts local microphone and system audio capture
+and opens the invitation link. The call app or browser may still show its usual
+pre-join screen. No bot joins, no audio is saved, and the existing transcript
+retention applies. System audio includes other audio playing on the Mac. Use
+Paco's menu-bar capture controls to pause or finish notes. Nothing is recorded
+until you click to start. Automatic Mac Focus detection has the limitation below.
+
+### macOS Focus support
 
 Automatic macOS Focus detection is currently unavailable in the locally signed
 build. Controls → Protect my flow reports this explicitly. Use a Paco focus

@@ -76,6 +76,8 @@ def canonical(raw,previous):
 def rekey(db,old,new,now,new_url=None):
     """Preserve meaningful task identities and explicit decisions across calendar copies."""
     if old==new:return
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='calendar_alert'").fetchone():
+        db.execute('UPDATE OR IGNORE calendar_alert SET event=? WHERE event=?',(new,old))
     tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     prior=db.execute("SELECT task_id FROM discovered WHERE source='calendar' AND key=?",(old,)).fetchone() if 'discovered' in tables else None
     destination=db.execute("SELECT task_id FROM discovered WHERE source='calendar' AND key=?",(new,)).fetchone() if 'discovered' in tables else None
