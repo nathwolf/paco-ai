@@ -103,6 +103,22 @@ class CalendarSync(unittest.TestCase):
   self.events['primary']=[];self.events['personal']=[dict(self.event,creator={'email':'juan@example.test','self':True},organizer={'email':'juan@example.test','self':True})]
   self.sync();self.assertEqual(self.db.execute('SELECT count(*) FROM busy').fetchone()[0],0)
   self.assertEqual(self.db.execute('SELECT count(*) FROM calendar_task_context').fetchone()[0],1)
+ def test_personal_errands_keep_context_without_muting_their_reminders(self):
+  for title in ('Print & check documents — US B-1 visa interview','Get 2 US visa passport photos'):
+   with self.subTest(title=title):
+    self.events['primary']=[dict(self.event,summary=title)]
+    self.sync()
+    self.assertEqual(self.db.execute('SELECT count(*) FROM busy').fetchone()[0],0)
+    self.assertEqual(self.db.execute('SELECT count(*) FROM calendar_event').fetchone()[0],1)
+    self.assertEqual(self.db.execute('SELECT count(*) FROM calendar_task_context').fetchone()[0],1)
+ def test_meetings_and_explicit_focus_blocks_still_protect_time(self):
+  for changes in ({'summary':'Review with Marcos'},{'summary':'Focus time'},
+                  {'summary':'Print review','attendees':[{'email':'marcos@example.test'}]},
+                  {'summary':'Print review','hangoutLink':'https://meet.google.com/abc-defg-hij'}):
+   with self.subTest(changes=changes):
+    self.events['primary']=[dict(self.event,**changes)]
+    self.sync()
+    self.assertEqual(self.db.execute('SELECT count(*) FROM busy').fetchone()[0],1)
  def test_foreign_creator_self_flag_does_not_prove_personal_action(self):
   self.events['primary']=[];self.events['personal']=[dict(self.event,creator={'email':'juan@example.test','self':True})]
   self.sync();task=self.linked_task()[0]

@@ -196,7 +196,15 @@ def google_rows(source, now, intervals=None, absences=None, calendars=None, even
                     if context_out is not None and ends:
                         context_out.append(calendar_action_context(event,calendar,begins,datetime.fromisoformat(ends.replace('Z','+00:00')).timestamp()))
                     if intervals is not None and ends and own_presence and event.get("transparency") != "transparent":
-                        intervals.append((begins, datetime.fromisoformat(ends.replace("Z", "+00:00")).timestamp()))
+                        import meeting_identity
+                        kind=meeting_identity.non_meeting_reason(
+                            {'title':event.get('summary','Meeting'),'url':event.get('hangoutLink') or event.get('htmlLink','')},
+                            meeting_identity.normalize_people(event.get('attendees',[])))
+                        # A scheduled errand is something to remind the user about,
+                        # not a meeting that should suppress its own reminder.
+                        # Keep real invitations and deliberately blocked time quiet.
+                        if kind!='Personal task':
+                            intervals.append((begins, datetime.fromisoformat(ends.replace("Z", "+00:00")).timestamp()))
                     if begins > now:
                         yield calendar+':'+event["id"], "Prepare for " + event.get("summary", "meeting"), begins - 900
 
