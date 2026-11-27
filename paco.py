@@ -167,10 +167,9 @@ def install():
     internal.parent.mkdir(parents=True,exist_ok=True)
     internal.symlink_to(bundle,target_is_directory=True)
     shortcut = Path.home() / 'Applications/Paco.app'
-    shortcut.parent.mkdir(parents=True, exist_ok=True)
-    if shortcut.is_symlink():shortcut.unlink()
-    if shortcut!=bundle and not shortcut.exists():
-        shortcut.symlink_to(bundle, target_is_directory=True)
+    if shortcut.is_symlink() and shortcut.resolve()==bundle.resolve():
+        subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister','-u',str(shortcut)],check=True)
+        shortcut.unlink()
     subprocess.run(['/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister','-f',str(bundle)],check=True)
     plist = Path.home() / "Library/LaunchAgents" / (LABEL + ".plist")
     plist.parent.mkdir(parents=True, exist_ok=True)
