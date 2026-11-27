@@ -467,7 +467,7 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     if([value[@"calendar_event"] isKindOfClass:NSDictionary.class]){[self renderCalendarAlert];return;}
     [self.banner orderOut:nil];
     // Layout in points from the top-left; AppKit's origin is bottom-left, so y = height - top - itemHeight.
-    CGFloat height=self.composing?256:150;
+    CGFloat height=self.composing?(self.currentAlert[@"pending_reply"]?256:202):150;
     NSRect screen=NSScreen.mainScreen.visibleFrame;
     NSPanel *panel=[self panel:NSMakeRect(NSMaxX(screen)-382,NSMaxY(screen)-height-18,364,height)];panel.title=@"Paco notification";panel.appearance=[NSAppearance appearanceNamed:NSAppearanceNameAqua];
     NSView *content=[[NSView alloc] initWithFrame:NSMakeRect(0,0,364,height)];content.wantsLayer=YES;panel.contentView=content;
@@ -555,11 +555,11 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
             button.toolTip=self.task&&i==1?(link?[NSString stringWithFormat:@"%@ · %@",linkTip,[self word:@"open_tip" fallback:@"Open it and focus for 25 minutes"]]:[self word:@"focus_tip" fallback:@"Focus for 25 minutes"]):self.task&&i==2?[self word:@"later_tip" fallback:@"Snooze for 15 minutes"]:(!self.task&&link&&i==0?linkTip:labels[i]);
         }
     } else {
-        NSScrollView *replyScroll=[[NSScrollView alloc] initWithFrame:NSMakeRect(14,height-108-56,336,56)];replyScroll.drawsBackground=NO;replyScroll.hasVerticalScroller=YES;replyScroll.wantsLayer=YES;replyScroll.layer.backgroundColor=color(0xF2F6EE).CGColor;replyScroll.layer.cornerRadius=12;
-        self.replyStatus=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,320,56)];self.replyStatus.editable=NO;self.replyStatus.selectable=YES;self.replyStatus.drawsBackground=NO;self.replyStatus.verticallyResizable=YES;self.replyStatus.autoresizingMask=NSViewWidthSizable;self.replyStatus.textContainer.widthTracksTextView=YES;self.replyStatus.textContainerInset=NSMakeSize(8,6);self.replyStatus.font=rounded(13,NSFontWeightSemibold);self.replyStatus.textColor=color(0x24452E);
+        NSScrollView *replyScroll=[[NSScrollView alloc] initWithFrame:NSMakeRect(14,height-106-44,336,44)];replyScroll.drawsBackground=NO;replyScroll.hasVerticalScroller=YES;replyScroll.wantsLayer=YES;replyScroll.layer.backgroundColor=color(0xF2F6EE).CGColor;replyScroll.layer.cornerRadius=12;
+        self.replyStatus=[[NSTextView alloc] initWithFrame:NSMakeRect(0,0,320,44)];self.replyStatus.editable=NO;self.replyStatus.selectable=YES;self.replyStatus.drawsBackground=NO;self.replyStatus.verticallyResizable=YES;self.replyStatus.autoresizingMask=NSViewWidthSizable;self.replyStatus.textContainer.widthTracksTextView=YES;self.replyStatus.textContainerInset=NSMakeSize(8,6);self.replyStatus.font=rounded(11.5,NSFontWeightMedium);self.replyStatus.textColor=color(0x24452E);
         self.replyStatus.string=value[@"reply_answer"]?:[self word:@"prompt" fallback:@"Tell me what changed, ask for help, or say when to check back."];[self.replyStatus setAccessibilityLabel:@"Paco’s answer"];replyScroll.documentView=self.replyStatus;[content addSubview:replyScroll];
-        self.replyField=[[NSTextField alloc] initWithFrame:NSMakeRect(14,height-172-30,252,30)];self.replyField.font=rounded(13,NSFontWeightMedium);self.replyField.placeholderString=[self word:@"placeholder" fallback:@"Reply to Paco…"];self.replyField.target=self;self.replyField.action=@selector(sendReply);self.replyField.bezelStyle=NSTextFieldRoundedBezel;[self.replyField setAccessibilityLabel:@"Reply to Paco"];[content addSubview:self.replyField];
-        self.sendButton=[self chunky:[self word:@"send" fallback:@"Send"] kind:@"green" frame:NSMakeRect(274,height-172-30,76,30) action:@selector(sendReply) in:content];
+        self.replyField=[[NSTextField alloc] initWithFrame:NSMakeRect(14,height-158-30,252,30)];self.replyField.font=rounded(13,NSFontWeightMedium);self.replyField.placeholderString=[self word:@"placeholder" fallback:@"Reply to Paco…"];self.replyField.target=self;self.replyField.action=@selector(sendReply);self.replyField.bezelStyle=NSTextFieldRoundedBezel;[self.replyField setAccessibilityLabel:@"Reply to Paco"];[content addSubview:self.replyField];
+        self.sendButton=[self chunky:[self word:@"send" fallback:@"Send"] kind:@"green" frame:NSMakeRect(274,height-158-30,76,30) action:@selector(sendReply) in:content];
         self.applyButton=[self chunky:[self word:@"apply" fallback:@"Apply"] kind:@"green" frame:NSMakeRect(14,height-212-30,110,30) action:@selector(applyReply) in:content];
         self.cancelButton=[self chunky:[self word:@"cancel" fallback:@"Cancel"] kind:@"white" frame:NSMakeRect(132,height-212-30,110,30) action:@selector(cancelReply) in:content];
         self.pendingReply=value[@"pending_reply"];self.applyButton.superview.hidden=!self.pendingReply;self.cancelButton.superview.hidden=!self.pendingReply;
@@ -618,6 +618,12 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
         self.replyStatus.string=answer[@"answer"]?:@"Please try again.";self.replyStatus.toolTip=self.replyStatus.string;
         self.pendingReply=[answer[@"pending"] boolValue]?answer[@"reply"]:nil;self.applyButton.superview.hidden=!self.pendingReply;self.cancelButton.superview.hidden=!self.pendingReply;
         [self.replyStatus scrollRangeToVisible:NSMakeRange(0,0)];self.replyField.stringValue=@"";self.replyRequest=nil;self.replyText=nil;[self refreshStatus];[self.banner makeFirstResponder:self.replyField];
+        if([answer[@"close"] boolValue]){
+            NSPanel *completedPanel=self.banner;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(1.2*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+                if(self.banner==completedPanel&&!self.replying&&self.replyField.stringValue.length==0)[self dismiss];
+            });
+        }
     });}] resume];
 }
 - (void)focusTask { NSNumber *task=self.task;[self dismiss];if(task)[self post:@{@"action":@"start",@"id":task}]; }

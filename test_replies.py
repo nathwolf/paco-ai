@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import uuid
+import json
 import app
 import paco
 import planning
@@ -98,14 +99,49 @@ class Replies(unittest.TestCase):
         result=self.say('that is done',notification=None)
         self.assertIn('isn’t attached',result['answer'])
         self.assertEqual(self.task()['state'],'open')
-    def test_model_proposal_requires_confirmation_and_cannot_target_other_tasks(self):
+    def legacy_proposal(self,intent):
+        ident=self.db.execute("INSERT INTO notification_reply(request,notification,task,text,answer,intent,status,created,result,snapshot) VALUES(?,1,1,'Legacy request','Apply?',?,'pending',?,'{}',?)",
+            (uuid.uuid4().hex,json.dumps(intent),self.now,json.dumps(dict(title=self.task()['title'],state=self.task()['state'],priority=self.task()['priority'],assignee='',intake_status='accepted')))).lastrowid
+        self.db.commit()
+        return {'reply':ident}
+
+    def test_model_executes_without_confirmation_and_cannot_target_other_tasks(self):
         result=self.proposed({'kind':'done'})
-        self.assertTrue(result['pending']);self.assertEqual(self.task()['state'],'open')
-        replies.confirm(self.db,result['reply'],True,self.now+1)
+        self.assertFalse(result['pending'])
+        self.assertTrue(result['close'])
         self.assertEqual(self.task()['state'],'done')
         replies.confirm(self.db,result['reply'],True,self.now+2)
         self.assertEqual(self.db.execute('SELECT count(*) FROM intervention').fetchone()[0],1)
         with self.assertRaises(ValueError):self.proposed({'kind':'done','task':999})
+
+    def test_month_postponement_is_local_and_preserves_task_title_and_deadline(self):
+        with self.db:self.db.execute("INSERT INTO details VALUES(1,'',30,2000000000)")
+        with patch('replies.models.complete') as model:
+            result=self.say('I cannot do this until January.',config={'provider':'codex_cli'})
+        model.assert_not_called()
+        self.assertEqual(self.task()['due'],datetime(2027,1,1,9).timestamp())
+        self.assertEqual(self.task()['title'],'Ship report')
+        self.assertEqual(self.db.execute('SELECT deadline FROM details').fetchone()[0],2000000000)
+        self.assertTrue(result['close'])
+
+    def test_model_edits_only_requested_fields(self):
+        result=self.proposed({'kind':'edit','title':'Request document','remind_at':'2027-01-03T09:00:00+01:00'})
+        self.assertTrue(result['close'])
+        self.assertEqual(self.task()['title'],'Request document')
+        self.assertEqual(self.task()['due'],datetime.fromisoformat('2027-01-03T09:00:00+01:00').timestamp())
+        self.assertIsNone(self.db.execute('SELECT deadline FROM details').fetchone())
+
+    def test_concurrent_task_change_is_preserved(self):
+        def complete(*args):
+            self.db.execute('UPDATE task SET due=123 WHERE id=1')
+            self.db.commit()
+            return {'intent':{'kind':'done'},'answer':'Done'},{}
+        with patch('replies.models.complete',side_effect=complete):
+            with self.assertRaisesRegex(ValueError,'task changed'):
+                self.say('I have completed the report',config={'provider':'codex_cli'})
+        self.assertEqual(self.task()['state'],'open')
+        self.assertEqual(self.task()['due'],123)
+
     def test_model_consent_checked_before_network_or_keychain(self):
         with patch('models.secret') as secret,patch('models.urllib.request.urlopen') as network:
             with self.assertRaisesRegex(ValueError,'not enabled'):
@@ -126,16 +162,16 @@ class Replies(unittest.TestCase):
         self.assertTrue(context['accepted_feedback'])
         self.assertFalse(result['pending']);self.assertEqual(self.task()['state'],'open')
     def test_cancel_expiry_and_superseding_replies(self):
-        result=self.proposed({'kind':'urgent'})
+        result=self.legacy_proposal({'kind':'urgent'})
         replies.confirm(self.db,result['reply'],False,self.now+1)
         self.assertEqual(self.db.execute('SELECT count(*) FROM urgency').fetchone()[0],0)
-        result=self.proposed({'kind':'urgent'})
+        result=self.legacy_proposal({'kind':'urgent'})
         with self.assertRaisesRegex(ValueError,'no longer current'):replies.confirm(self.db,result['reply'],True,self.now+601)
-        result=self.proposed({'kind':'urgent'})
+        result=self.legacy_proposal({'kind':'urgent'})
         self.say('not urgent')
         with self.assertRaisesRegex(ValueError,'no longer current'):replies.confirm(self.db,result['reply'],True,self.now+2)
     def test_model_proposal_rejects_task_changes_and_bad_schema(self):
-        result=self.proposed({'kind':'done'})
+        result=self.legacy_proposal({'kind':'done'})
         with self.db:self.db.execute("UPDATE task SET title='Changed scope' WHERE id=1")
         with self.assertRaisesRegex(ValueError,'task changed'):replies.confirm(self.db,result['reply'],True,self.now+1)
         for intent in ({'kind':'shell','command':'rm'}, {'kind':'focus','minutes':10080}, {'kind':'snooze','minutes':True}, {'kind':'snooze','minutes':float('inf')}):
@@ -173,12 +209,9 @@ class Replies(unittest.TestCase):
         self.assertFalse(attention.eligible(self.db,1))
         self.assertEqual(attention.corrections(self.db)[0]['assignee'],'Juan')
         self.assertIn('task corrections',self.say('what have you learned')['answer'])
-    def test_model_reassignment_cannot_override_a_newer_owner(self):
-        import workspace
-        proposal=self.proposed({'kind':'assign','person':'Juan'},'Juan should own this action')
-        workspace.edit_task(self.db,{'id':1,'changes':{'assignee':'Ana'}})
-        with self.assertRaises(ValueError):replies.confirm(self.db,proposal['reply'],True,self.now)
-        self.assertEqual(self.db.execute('SELECT owner FROM ownership WHERE task=1').fetchone()[0],'Ana')
+    def test_model_reassignment_applies_directly(self):
+        self.proposed({'kind':'assign','person':'Juan'},'Juan should own this action')
+        self.assertEqual(self.db.execute('SELECT owner FROM ownership WHERE task=1').fetchone()[0],'Juan')
 
     def test_not_mine_clears_my_assignment_and_remembers_explicit_rejection(self):
         import attention
