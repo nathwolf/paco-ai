@@ -26,6 +26,8 @@ def initialize(db):
         CREATE TABLE IF NOT EXISTS task_override(task INTEGER PRIMARY KEY,title TEXT,state TEXT);
         CREATE TABLE IF NOT EXISTS calendar_busy(provider TEXT,start REAL,end REAL);
     """)
+    import scheduled_checks
+    scheduled_checks.initialize(db)
     reminder_groups.initialize(db)
     flow.initialize(db)
 
@@ -177,6 +179,8 @@ def next_reminder(db, now):
         rows=[r for r in rows if r['critical'] or r['deadline'] and r['deadline']<=now+86400]
     budget = 2 if wait else 8
     rows = [r for r in rows if db.execute("SELECT count(*) FROM intervention WHERE task=? AND action='notify' AND at>=?",(r['id'],midnight)).fetchone()[0] < budget]
+    pending={r[0] for r in db.execute("SELECT s.task FROM scheduled_check s JOIN task t ON t.id=s.task WHERE t.due=s.at")}
+    rows=[r for r in rows if r['id'] not in pending]
     covered=reminder_groups.covered(db,now)
     return next((r for r in rows if r['critical'] or r['urgent'] or r['id'] not in covered),None)
 

@@ -1,7 +1,7 @@
 """Conservative cross-source obligation matching and auditable, lossless task merges."""
 from contextlib import nullcontext
 import hashlib,json,time
-import reminder_groups
+import reminder_groups, scheduled_checks
 import task_dates
 import attention,models,workflows,tagging
 
@@ -26,7 +26,20 @@ Use grouped_examples as examples of coordination, not universal rules. Grouped e
 
 
 
+PROMPT += """ Return steps:[{parent:number,child:number,confidence:"high",quotes:[{task:number,quote:string}]}]
+only when the child is a concrete prerequisite for delivering the broader parent, grounded in BOTH tasks.
+Use step_examples. Research, implementation and verification can have independent completion states.
+Do not merge or group a prerequisite with its parent. Do not infer that finishing research completes implementation.
+For newly arrived undated tasks (ID above new_after), use first_check_examples to propose a first reminder only for
+a close match in workflow and urgency. Return checks:[{tasks:[ids],example:numeric example id,label:string,
+confidence:"high",quotes:[{task:number,quote:string}]}]. A joint initial check (such as checking two portals)
+is a single session only; the subsequent deliverables stay independent. Do not make that a repeating group.
+Exclude tasks waiting on someone, appointments, urgent work and cases without a close example.
+Apply a task's own explicit scheduling first. Empty arrays are valid."""
+
+
 def initialize(db):
+    db.execute('CREATE TABLE IF NOT EXISTS step_example(parent INTEGER,child INTEGER,PRIMARY KEY(parent,child))')
     db.execute('''CREATE TABLE IF NOT EXISTS task_merge(id INTEGER PRIMARY KEY,keep INTEGER,other INTEGER,
         manual INTEGER,reason TEXT,before_json TEXT,at REAL)''')
 
@@ -90,7 +103,7 @@ def permitted(config,source):
 def snapshot(db,config):
     result=[]
     for r in db.execute('''SELECT t.id,t.title,t.state,COALESCE(o.owner,'') AS owner,a.status,a.kind,a.source,
-        tp.project,d.deadline,x.description FROM task t JOIN task_attention a ON a.task=t.id
+        tp.project,d.deadline,x.description,x.parent FROM task t JOIN task_attention a ON a.task=t.id
         LEFT JOIN ownership o ON o.task=t.id LEFT JOIN task_project tp ON tp.task=t.id
         LEFT JOIN details d ON d.task=t.id LEFT JOIN task_extra x ON x.task=t.id
         WHERE t.state IN ('open','focus','blocked','done') AND a.status IN ('accepted','suggested') ORDER BY t.id DESC LIMIT 150'''):
@@ -117,6 +130,36 @@ def compatible(db,a,b,relationship):
     return relationship=='duplicate' and not (b['state']=='done' and a['state']!='done')
 
 
+def link_step(db, parent, child):
+    """A child completes independently. Its parent becomes eligible afterwards."""
+    if db.execute("SELECT COUNT(*) FROM task WHERE id IN (?,?)",(parent,child)).fetchone()[0]!=2:
+        return False
+    previous=db.execute('SELECT parent FROM task_extra WHERE task=?',(child,)).fetchone()
+    if previous and previous[0] not in (None,parent):
+        return False
+    # Parent and dependency edges both point from the deliverable to its prerequisite.
+    if db.execute("""WITH RECURSIVE edges(a,b) AS (SELECT task,prerequisite FROM dependency
+        UNION SELECT parent,task FROM task_extra WHERE parent IS NOT NULL),
+        chain(id) AS (SELECT ? UNION SELECT b FROM edges JOIN chain ON a=id)
+        SELECT 1 FROM chain WHERE id=?""",(child,parent)).fetchone():
+        return False
+    db.execute('INSERT INTO task_extra(task,parent) VALUES(?,?) ON CONFLICT(task) DO UPDATE SET parent=excluded.parent',(child,parent))
+    db.execute('INSERT OR IGNORE INTO dependency VALUES(?,?)',(parent,child))
+    return True
+
+
+def apply_steps(db, proposals, tasks, blocked, after):
+    for step in proposals if isinstance(proposals,list) else []:
+        if not isinstance(step,dict) or step.get('confidence')!='high':continue
+        parent,child=step.get('parent'),step.get('child')
+        if any(type(i)!=int or i not in tasks for i in (parent,child)):continue
+        if max(parent,child)<=after or tuple(sorted((parent,child))) in blocked:continue
+        a,b=tasks[parent],tasks[child]
+        if not a['project'] or a['project']!=b['project'] or a['kind']!=b['kind']:continue
+        if all(t['state']=='open' and attention.eligible(db,t['id']) and reminder_groups.grounded(t,step.get('quotes')) for t in (a,b)):
+            link_step(db,parent,child)
+
+
 def reconcile(db,config,complete=None):
     initialize(db)
     if not config or not permitted(config,'chat'):return 0
@@ -129,9 +172,18 @@ def reconcile(db,config,complete=None):
     byid={t['id']:t for t in tasks}
     negatives=[[byid[a]['title'],byid[b]['title']] for a,b in sorted(blocked) if a in byid and b in byid]
     grouped=reminder_groups.examples(db,lambda source:permitted(config,source))
-    fingerprint=stamp([tasks,examples,negatives,grouped,'group-v1']);old=db.execute("SELECT value FROM preference WHERE key='relationships_checked'").fetchone()
+    steps=[{'parent':r['parent_title'],'child':r['child_title']} for r in db.execute("""SELECT p.title parent_title,
+        c.title child_title,pa.source parent_source,ca.source child_source FROM step_example e
+        JOIN task p ON p.id=e.parent JOIN task c ON c.id=e.child JOIN task_extra x ON x.task=c.id AND x.parent=p.id
+        JOIN task_attention pa ON pa.task=p.id JOIN task_attention ca ON ca.task=c.id""")
+        if permitted(config,r['parent_source']) and permitted(config,r['child_source'])]
+    checks=scheduled_checks.examples(db,lambda source:permitted(config,source))
+    floor=db.execute("SELECT value FROM preference WHERE key='check_learning_after'").fetchone()
+    after=int(floor[0]) if floor else max(byid)
+    fingerprint=stamp([tasks,examples,negatives,grouped,steps,checks,after,'steps-v1'])
+    old=db.execute("SELECT value FROM preference WHERE key='relationships_checked'").fetchone()
     if old and old[0]==fingerprint:return 0
-    result,_=(complete or models.complete)(config,PROMPT,{'tasks':tasks,'explicit_merge_examples':examples,'keep_separate_examples':negatives,'grouped_examples':grouped},'chat')
+    result,_=(complete or models.complete)(config,PROMPT,{'tasks':tasks,'explicit_merge_examples':examples,'keep_separate_examples':negatives,'grouped_examples':grouped,'step_examples':steps,'first_check_examples':checks,'new_after':after},'chat')
     proposals=result.get('merges')
     if not isinstance(proposals,list):raise ValueError('Invalid task relationships')
     byid={t['id']:t for t in tasks};changed=0
@@ -140,6 +192,12 @@ def reconcile(db,config,complete=None):
         if stamp(snapshot(db,config))!=stamp(tasks) or blocked!=reminder_groups.separate_pairs(db):return 0
         used=set()
         distinct=reminder_groups.distinct_pairs(db,byid)
+        if steps:apply_steps(db,result.get('steps'),byid,distinct,after)
+        # One-time joint checks preserve both deliverables, even after the reminder fires.
+        joint={tuple(r) for r in db.execute("""SELECT a.task,b.task FROM check_example_task a
+            JOIN check_example_task b ON a.example=b.example AND a.task<b.task""")}
+        joint.update(tuple(r) for r in db.execute('SELECT a,b FROM first_check_pair'))
+        distinct.update(joint)
         for d in proposals:
             if not isinstance(d,dict):continue
             keep=d.get('keep');other=d.get('other')
@@ -156,6 +214,8 @@ def reconcile(db,config,complete=None):
             except ValueError:
                 db.execute('ROLLBACK TO merge_candidate');db.execute('RELEASE merge_candidate');continue
             db.execute('RELEASE merge_candidate');changed+=applied;used.update((keep,other))
+        schedules={e['id']:e for e in checks}
+        scheduled_checks.apply_checks(db,result.get('checks'),byid,schedules,after,used,time.time())
         reminder_groups.replace(db,result.get('groups',[]),byid,used)
         db.execute("INSERT OR REPLACE INTO preference VALUES('relationships_checked',?)",(fingerprint,))
     return changed

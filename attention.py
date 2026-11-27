@@ -183,7 +183,7 @@ def corrections(db, config=None, limit=30):
     import models
     if config is not None and not (models.is_local(config) or 'chat' in config.get('allowed_sources',[])):return []
     return [dict(r) for r in db.execute("""SELECT e.id AS correction_id,e.task AS task,t.title,p.id AS project_id,p.name AS project,a.source,a.kind AS responsibility,
-        COALESCE(o.owner,'') AS assignee,e.action AS correction,a.status AS current_status
+        COALESCE(o.owner,'') AS assignee,e.action AS correction,e.reason AS correction_reason,a.status AS current_status
         FROM attention_event e JOIN task t ON t.id=e.task
         LEFT JOIN task_attention a ON a.task=t.id LEFT JOIN ownership o ON o.task=t.id
         LEFT JOIN task_project tp ON tp.task=t.id LEFT JOIN project p ON p.id=tp.project

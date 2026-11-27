@@ -182,6 +182,10 @@ remind_at (ISO8601 offset), assignee, tags (list), estimate_minutes, responsibil
 relative dates. Do not invent dates, urgency, or ownership. Empty actions is valid. You cannot send messages."""
 
 
+import scheduled_checks
+PROMPT += scheduled_checks.PROMPT
+
+
 def sync(db, config, model, now=None, client=None, predict=None):
     import workflows
     import models
@@ -228,7 +232,8 @@ def sync(db, config, model, now=None, client=None, predict=None):
         updates=[m['id'] for m in messages if stamp(m)>=since*1000 and not db.execute('SELECT 1 FROM mattermost_seen WHERE account=? AND message=? AND version=?',(account,m['id'],stamp(m))).fetchone()]
         import attention, project_brains
         with db:attention.add_identities(db,[config['username'],config['user_id']])
-        payload = dict(responsibility_corrections=attention.corrections(db,model),project_briefs=project_brains.context(db),owner=config['user_id'],username=config['username'],channel=row['channel'],messages=messages,
+        watches=scheduled_checks.conditions(db,'mattermost',account+'/'+channel)
+        payload = dict(reminder_conditions=watches,responsibility_corrections=attention.corrections(db,model),project_briefs=project_brains.context(db),owner=config['user_id'],username=config['username'],channel=row['channel'],messages=messages,
             existing=existing,update_messages=updates,history=[h for h in row.get('history',[]) if not workflows.forgotten(db,'mattermost',account+'/'+h['id'])],local_time=datetime.fromtimestamp(now).astimezone().isoformat())
         value = predict(payload) if predict else models.complete(model,PROMPT,payload,'mattermost')[0]
         actions = value.get('actions')
@@ -247,6 +252,7 @@ def sync(db, config, model, now=None, client=None, predict=None):
         if len(set(targets))!=len(targets):raise ValueError('Conflicting changes to the same task')
         with db:
             db.execute('BEGIN IMMEDIATE')
+            scheduled_checks.release(db,watches,value.get('signals'),[m for m in messages if m['id'] in updates],now)
             for item,fingerprint in prepared:
                 result=tasks.apply(db,item,config['base'],account,now)
                 ident=result['task']

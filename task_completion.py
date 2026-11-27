@@ -101,6 +101,9 @@ def proof(db,task,context,result):
     if result.get('verdict')!='completed' or result.get('confidence')!='high' or result.get('coverage')!='full':return None
     if result.get('proof_type')=='necessary_prerequisite':
         related=next((r for r in context.get('completed_related',[]) if r['id']==result.get('related_task')),None)
+        if related and db.execute("""WITH RECURSIVE deps(id) AS (SELECT prerequisite FROM dependency WHERE task=?
+            UNION SELECT e.prerequisite FROM dependency e JOIN deps ON e.task=deps.id)
+            SELECT 1 FROM deps WHERE id=?""",(task['id'],related['id'])).fetchone():return None
         if not related or result.get('quote')!=related['confirmation'] or related['at']<=context['since']:return None
         if any('"state"' in change and at>=related['at'] for change,at in task['corrections']):return None
         return dict(id='user-completion-'+str(related['id']),date=str(int(related['at']*1000)),source='user',text=related['confirmation'])

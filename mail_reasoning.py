@@ -1,4 +1,5 @@
 """Evidence-backed Gmail task extraction using a configurable chat model."""
+import scheduled_checks
 import task_dates
 import history_sync
 import mail_noise
@@ -39,7 +40,8 @@ email verification, account activation, sign-in links, password reset flows, wel
 messages, marketing and generic onboarding nudges. Registration alone is not a
 commitment to apply, purchase, book a demo or complete a profile. Only track those
 larger steps when a personal commitment or concrete relevant obligation is evidenced.
-Being addressed to the owner proves neither importance nor a need for a reminder.
+Respect dismissed items in existing. Only a distinct new commitment in a later message can justify new work on that topic.
+Being addressed to the owner proves neither importance nor a need for a reminder. A coworker asking for a casual explanation about a forwarded offer, with no decision, blocker or promise to follow up, normally needs no tracked task. Use correction_reason to learn when a reply is worth tracking.
 Do retain substantive project work, signatures, required appointment preparation,
 real deadlines and commitments. A short action can still matter. Routine account
 steps can be added manually if the user explicitly asks Paco to track them.
@@ -49,6 +51,9 @@ and deadline_quote (exact timing text from that message). Resolve relative dates
 If later mail gives an existing outstanding task its missing deadline, emit kind="date" with task, message,
 quote, deadline and deadline_quote. Leave uncertain or conflicting timing in notes.
 Empty actions is valid. Never invent evidence."""
+
+
+PROMPT += scheduled_checks.PROMPT
 
 
 class VisibleText(HTMLParser):
@@ -171,17 +176,21 @@ def analyze(db, thread, settings, owner, predict=infer):
     if db.execute("SELECT 1 FROM mail_revision WHERE thread=? AND version=?", (tid, version)).fetchone():
         return False
     msgs = messages(thread)
-    existing = [dict(row) for row in db.execute("""SELECT t.id,t.title,t.state,m.message,d.deadline
-        FROM mail_task m JOIN task t ON t.id=m.task LEFT JOIN details d ON d.task=t.id WHERE m.thread=?""", (tid,))]
+    existing = [dict(row) for row in db.execute("""SELECT t.id,t.title,t.state,m.message,d.deadline,
+        a.status AS intake_status FROM mail_task m JOIN task t ON t.id=m.task LEFT JOIN details d ON d.task=t.id
+        LEFT JOIN task_attention a ON a.task=t.id WHERE m.thread=?""", (tid,))]
     waiting=[dict(r) for r in db.execute("SELECT * FROM waiting WHERE status='waiting'") if r['thread']==thread['id'] or r['thread'].rstrip('/').endswith('/'+thread['id'])]
     import project_brains
-    result = predict(settings, {"responsibility_corrections":attention.corrections(db,settings),"project_briefs":project_brains.context(db),"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting,"local_time":__import__("datetime").datetime.now().astimezone().isoformat()}) if msgs else {"actions":[]}
+    watches=scheduled_checks.conditions(db,'gmail',owner)
+    result = predict(settings, {"reminder_conditions":watches,"responsibility_corrections":attention.corrections(db,settings),"project_briefs":project_brains.context(db),"owner": owner, "messages": msgs, "existing": existing, "waiting":waiting,"local_time":__import__("datetime").datetime.now().astimezone().isoformat()}) if msgs else {"actions":[]}
     actions = result["actions"]
     if not isinstance(actions, list):
         raise ValueError("invalid actions")
     positions = {m["id"]: i for i, m in enumerate(msgs)}
     origins = {t["id"]: t["message"] for t in existing}
     with db:
+        allowed_messages=[m for m in msgs if not workflows.forgotten(db,'gmail',tid+'/'+m['id'])]
+        scheduled_checks.release(db,watches,result.get('signals'),allowed_messages,time.time())
         for action in actions:
             mid, quote = action["message"], action["quote"]
             if mid not in positions or not isinstance(quote, str) or not quote.strip() or quote not in msgs[positions[mid]]["text"]:

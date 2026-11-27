@@ -124,6 +124,7 @@ async function showReminder(){
  }
  const tasks=(state?.tasks||[]).filter(t=>openReminder.tasks.includes(t.id)&&t.my_responsibility);
  $('#reminder-label').textContent=openReminder.label;
+ $('#split-reminder').hidden=openReminder.tasks.length<2;
  $('#reminder-items').replaceChildren(...tasks.map(taskRow));
  if(!dialog.open)dialog.showModal();
 }

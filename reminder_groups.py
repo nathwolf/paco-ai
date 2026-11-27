@@ -51,6 +51,13 @@ def examples(db, permitted):
     return result
 
 
+def grounded(task, refs):
+    if not isinstance(refs,list):return False
+    sources=[task['title'],task.get('description') or '']+[e['text'] for e in task['evidence']]
+    return any(isinstance(q,dict) and q.get('task')==task['id'] and isinstance(q.get('quote'),str)
+               and q['quote'].strip() and any(q['quote'] in s for s in sources) for q in refs)
+
+
 def replace(db, proposals, tasks, excluded):
     """Accept well-grounded, nonoverlapping proposals from the current snapshot."""
     if not isinstance(proposals,list):
@@ -64,7 +71,12 @@ def replace(db, proposals, tasks, excluded):
                  and tasks[m['id']]['state']=='open']
         reviewed.append({'tasks':[m['id'] for m in members],'label':row['label'],'confidence':'high',
                          'quotes':[{'task':m['id'],'quote':m['title']} for m in members]})
-    for group in reviewed+proposals:
+    # Inferred one-time checks must never silently become permanent reminder groups.
+    once={tuple(r) for r in db.execute("""SELECT a.task,b.task FROM check_example_task a JOIN check_example_task b
+        ON a.example=b.example AND a.task<b.task UNION SELECT a,b FROM first_check_pair
+        UNION SELECT task,prerequisite FROM dependency WHERE task<prerequisite
+        UNION SELECT prerequisite,task FROM dependency WHERE prerequisite<task""")}
+    for index,group in enumerate(reviewed+proposals):
         if not isinstance(group,dict) or group.get('confidence') != 'high':
             continue
         ids, label, refs = group.get('tasks'), group.get('label'), group.get('quotes')
@@ -74,16 +86,13 @@ def replace(db, proposals, tasks, excluded):
             continue
         if len(set(ids))!=len(ids) or used.intersection(ids) or blocked.intersection(combinations(sorted(ids),2)):
             continue
+        if index>=len(reviewed) and once.intersection(combinations(sorted(ids),2)):continue
         members = [tasks[i] for i in ids]
         if len({m['project'] for m in members})!=1 or len({m['kind'] for m in members})!=1:
             continue
         if len({m['deadline'] for m in members})!=1:
             continue
-        def grounded(m):
-            sources = [m['title'], m.get('description') or ''] + [e['text'] for e in m['evidence']]
-            return any(isinstance(q,dict) and q.get('task')==m['id'] and isinstance(q.get('quote'),str)
-                       and q['quote'].strip() and any(q['quote'] in s for s in sources) for q in refs)
-        if any(m['state']!='open' or m['status']!='accepted' or not grounded(m) for m in members):
+        if any(m['state']!='open' or m['status']!='accepted' or not grounded(m,refs) for m in members):
             continue
         cohort = ','.join(map(str,sorted(ids)))
         db.executemany('INSERT INTO reminder_member VALUES(?,?,?,?)',
@@ -102,7 +111,8 @@ def ready(db,now):
     import planning,tagging
     if planning.reason_to_wait(db,now):
         return {}
-    candidates = {r['id']:r for r in planning.ranked(db,now) if r['state']=='open' and not r['critical']
+    pending={r[0] for r in db.execute('SELECT s.task FROM scheduled_check s JOIN task t ON s.task=t.id WHERE s.at=t.due')}
+    candidates = {r['id']:r for r in planning.ranked(db,now) if r['id'] not in pending and r['state']=='open' and not r['critical']
                   and not r['urgent'] and tagging.allowed(db,now,r)}
     result = {}
     for m in db.execute("""SELECT m.*,t.title,x.description,p.project,a.kind,COALESCE(o.owner,'') owner,d.deadline

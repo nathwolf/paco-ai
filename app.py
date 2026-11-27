@@ -35,6 +35,7 @@ import presence
 import mac_focus
 import task_dates
 import calendar_alerts
+import scheduled_checks
 import reminder_groups
 import intake
 import company_sync
@@ -121,11 +122,11 @@ def labels(db):
 def banner_payload(db, row, now=None):
     """A queued notification plus what the native banner draws: chips, title, nudge, wording and where OPEN goes."""
     value = _banner_content(db, row, now)
-    if value.get('reason')==reminder_groups.REASON:
+    if value.get('reason') in (scheduled_checks.REASON,reminder_groups.REASON):
         ids=reminder_groups.members(db,value['id'])
         spanish=planning.setting(db,'language','en')=='es'
         value.update(title=row['message'],nudge='',link={'url':'/#reminder-'+str(value['id']),'label':'Open tasks'},
-                     badges=[{'text':str(len(ids))+(' tareas' if spanish else ' tasks'),'tone':'green'}])
+                     badges=[{'text':str(len(ids))+' '+(('tarea' if spanish else 'task') if len(ids)==1 else ('tareas' if spanish else 'tasks')),'tone':'green'}])
         return value
     if value.get('reason')==calendar_alerts.REASON:
         value['calendar_event']=calendar_alerts.payload(db,value['id'],now)
@@ -330,6 +331,7 @@ def worker(path, connect, stop):
             flow.sample(db)
             now = time.time()
             calendar_alerts.queue(db,now)
+            scheduled_checks.queue(db,now)
             meetings.purge(db,now)
             slacking.purge(db,now)
             day=time.strftime('%Y-%m-%d',time.localtime(now))
@@ -803,7 +805,7 @@ def act(db,path,connect,data):
         return {'ok':True}
     if action=='reminder_members':
         note=int(data['id'])
-        row=db.execute('SELECT message FROM notification WHERE id=? AND reason=?',(note,reminder_groups.REASON)).fetchone()
+        row=db.execute('SELECT message FROM notification WHERE id=? AND reason IN (?,?)',(note,reminder_groups.REASON,scheduled_checks.REASON)).fetchone()
         if not row:raise ValueError('Unknown grouped reminder')
         return {'tasks':reminder_groups.members(db,note),'label':row['message']}
     if action=='separate_reminders':
@@ -811,6 +813,7 @@ def act(db,path,connect,data):
         return {'ok':True}
     if action=='ack':
         with db:
+            scheduled_checks.acknowledge(db,data['id'],now)
             db.execute('UPDATE notification SET shown=? WHERE id=?',(now,data['id']))
         return {'ok':True}
     if action=='sync':
@@ -952,13 +955,15 @@ def make_server(path,connect,port=0):
                     if workspace.active(db) or mac_focus.active(db):return self.respond(None)
                     flow.sample(db)
                     now = time.time()
-                    for row in db.execute('SELECT * FROM notification WHERE shown IS NULL AND created>? ORDER BY (reason=?) DESC,id',(now-300,calendar_alerts.REASON)):
-                        if row['reason']==reminder_groups.REASON:
-                            ids=reminder_groups.current(db,row['id'],now)
-                            if len(ids)<2:continue
+                    for row in db.execute('SELECT * FROM notification WHERE shown IS NULL AND created>? ORDER BY (reason=?) DESC,(reason=?) DESC,id',(now-300,calendar_alerts.REASON,scheduled_checks.REASON)):
+                        if row['reason'] in (scheduled_checks.REASON,reminder_groups.REASON):
+                            scheduled=row['reason']==scheduled_checks.REASON
+                            ids=(scheduled_checks if scheduled else reminder_groups).current(db,row['id'],now)
+                            if len(ids)<(1 if scheduled else 2):continue
                             with db:
                                 for i in set(reminder_groups.members(db,row['id']))-set(ids):
                                     db.execute('DELETE FROM reminder_delivery WHERE notification=? AND task=?',(row['id'],i))
+                                    if scheduled:db.execute('UPDATE scheduled_check SET note=NULL WHERE note=? AND task=?',(row['id'],i))
                             return self.respond(banner_payload(db,row,now))
                         if row['reason']==calendar_alerts.REASON:
                             if not calendar_alerts.allowed(db,now) or not calendar_alerts.event_for_alert(db,row['id'],now):continue
