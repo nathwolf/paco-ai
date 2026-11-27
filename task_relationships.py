@@ -1,6 +1,7 @@
 """Conservative cross-source obligation matching and auditable, lossless task merges."""
 from contextlib import nullcontext
 import hashlib,json,time
+import reminder_groups
 import task_dates
 import attention,models,workflows,tagging
 
@@ -15,6 +16,14 @@ upload is complete. For checklist, combine related preparation steps ONLY when t
 event and neither is done; retain all steps. Same project alone is never enough. Do not merge separate
 milestones, execute vs manage/review, different owners, dates or projects. Saved manual merges are
 examples, not universal rules. Quotes must ground BOTH tasks. Leave uncertain pairs separate.'''
+
+PROMPT += ''' Also return groups:[{tasks:[numeric ids],label:"short shared activity",confidence:"high",quotes:[{task:number,quote:"exact text from task title, notes or evidence"}]}].
+Group distinct open commitments when one sitting, occasion or workflow gives a concrete reason to remind together.
+Completion of one step must not mark another step complete. For those cases use groups, not merges.
+Infer the connection even across threads. A shared project, person or generic tag alone is insufficient.
+Exclude conditional steps waiting for a trigger, separate occurrences, distinct deadlines and unrelated technical work.
+Use grouped_examples as examples of coordination, not universal rules. Grouped examples keep individual completion states. Use keep_separate_examples as negative examples; never merge or regroup those pairs. Return the complete set of current groups.'''
+
 
 
 def initialize(db):
@@ -116,20 +125,26 @@ def reconcile(db,config,complete=None):
     examples=[dict(r) for r in db.execute('SELECT reason,before_json FROM task_merge WHERE manual=1 ORDER BY id DESC LIMIT 20')]
     # Only task titles are training examples; copied source text stays local.
     examples=[{'reason':e['reason'],'tasks':[t['title'] for t in json.loads(e['before_json'])['tasks']]} for e in examples]
-    fingerprint=stamp([tasks,examples]);old=db.execute("SELECT value FROM preference WHERE key='relationships_checked'").fetchone()
+    blocked=reminder_groups.separate_pairs(db)
+    byid={t['id']:t for t in tasks}
+    negatives=[[byid[a]['title'],byid[b]['title']] for a,b in sorted(blocked) if a in byid and b in byid]
+    grouped=reminder_groups.examples(db,lambda source:permitted(config,source))
+    fingerprint=stamp([tasks,examples,negatives,grouped,'group-v1']);old=db.execute("SELECT value FROM preference WHERE key='relationships_checked'").fetchone()
     if old and old[0]==fingerprint:return 0
-    result,_=(complete or models.complete)(config,PROMPT,{'tasks':tasks,'explicit_merge_examples':examples},'chat')
+    result,_=(complete or models.complete)(config,PROMPT,{'tasks':tasks,'explicit_merge_examples':examples,'keep_separate_examples':negatives,'grouped_examples':grouped},'chat')
     proposals=result.get('merges')
     if not isinstance(proposals,list):raise ValueError('Invalid task relationships')
     byid={t['id']:t for t in tasks};changed=0
     with db:
         db.execute('BEGIN IMMEDIATE')
-        if stamp(snapshot(db,config))!=stamp(tasks):return 0
+        if stamp(snapshot(db,config))!=stamp(tasks) or blocked!=reminder_groups.separate_pairs(db):return 0
         used=set()
+        distinct=reminder_groups.distinct_pairs(db,byid)
         for d in proposals:
             if not isinstance(d,dict):continue
             keep=d.get('keep');other=d.get('other')
             if type(keep) is not int or type(other) is not int or keep==other or keep not in byid or other not in byid or {keep,other}&used:continue
+            if tuple(sorted((keep,other))) in distinct:continue
             a,b=byid[keep],byid[other]
             if d.get('confidence')!='high' or not compatible(db,a,b,d.get('relationship')):continue
             refs=d.get('quotes',[])
@@ -141,5 +156,6 @@ def reconcile(db,config,complete=None):
             except ValueError:
                 db.execute('ROLLBACK TO merge_candidate');db.execute('RELEASE merge_candidate');continue
             db.execute('RELEASE merge_candidate');changed+=applied;used.update((keep,other))
+        reminder_groups.replace(db,result.get('groups',[]),byid,used)
         db.execute("INSERT OR REPLACE INTO preference VALUES('relationships_checked',?)",(fingerprint,))
     return changed

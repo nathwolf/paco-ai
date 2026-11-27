@@ -1,6 +1,7 @@
 """Paco's offline reminder service. Run python3 paco.py --help."""
 import actions
 import discovery
+import reminder_groups
 import planning
 import argparse
 import json
@@ -86,7 +87,9 @@ def tick(db, now, deliver):
         if task is None:
             return
         prompt = planning.prompt(db, task, now)
-        deliver(f"{prompt}: {task['title']} (#{task['id']})")
+        if deliver(f"{prompt}: {task['title']} (#{task['id']})") is reminder_groups.GROUP_QUEUED:
+            db.execute("INSERT INTO intervention VALUES(NULL,'notify',?)",(now,))
+            return
         db.execute("INSERT INTO intervention VALUES(?,?,?)", (task["id"], "notify", now))
         db.execute("""UPDATE task SET state='open', nudges=nudges+1, due=?
                       WHERE id=?""", (now + planning.reminder_delay(db, task, now), task["id"]))

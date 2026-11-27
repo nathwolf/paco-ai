@@ -35,6 +35,7 @@ import presence
 import mac_focus
 import task_dates
 import calendar_alerts
+import reminder_groups
 import intake
 import company_sync
 import workspace
@@ -120,6 +121,12 @@ def labels(db):
 def banner_payload(db, row, now=None):
     """A queued notification plus what the native banner draws: chips, title, nudge, wording and where OPEN goes."""
     value = _banner_content(db, row, now)
+    if value.get('reason')==reminder_groups.REASON:
+        ids=reminder_groups.members(db,value['id'])
+        spanish=planning.setting(db,'language','en')=='es'
+        value.update(title=row['message'],nudge='',link={'url':'/#reminder-'+str(value['id']),'label':'Open tasks'},
+                     badges=[{'text':str(len(ids))+(' tareas' if spanish else ' tasks'),'tone':'green'}])
+        return value
     if value.get('reason')==calendar_alerts.REASON:
         value['calendar_event']=calendar_alerts.payload(db,value['id'],now)
         value['theme']=planning.setting(db,'theme','system')
@@ -183,6 +190,7 @@ def _banner_content(db, row, now=None):
 def enqueue(db, now, message):
     task = planning.next_reminder(db,now)
     if task:
+        if reminder_groups.enqueue(db,task['id'],now):return reminder_groups.GROUP_QUEUED
         mood,reason = planning.presentation(task,now,planning.setting(db,'language','en')=='es')
         db.execute('INSERT INTO notification(task,message,mood,reason,created) VALUES(?,?,?,?,?)',
                    (task['id'],planning.prompt(db,task,now)+': '+task['title'],mood,reason,now))
@@ -793,6 +801,14 @@ def act(db,path,connect,data):
             db.execute('INSERT INTO notification(task,message,mood,reason,created) VALUES(NULL,?,?,?,?)',
                        ({'friendly':'Your next task is ready when you are.','impatient':'This one has been waiting a while.','angry':'An urgent commitment needs your attention.','furious':'This urgent task is a day overdue.','rage':'This urgent task is several days overdue.'}[mood],mood,'Notification preview',now))
         return {'ok':True}
+    if action=='reminder_members':
+        note=int(data['id'])
+        row=db.execute('SELECT message FROM notification WHERE id=? AND reason=?',(note,reminder_groups.REASON)).fetchone()
+        if not row:raise ValueError('Unknown grouped reminder')
+        return {'tasks':reminder_groups.members(db,note),'label':row['message']}
+    if action=='separate_reminders':
+        reminder_groups.split(db,int(data['id']))
+        return {'ok':True}
     if action=='ack':
         with db:
             db.execute('UPDATE notification SET shown=? WHERE id=?',(now,data['id']))
@@ -903,7 +919,7 @@ def make_server(path,connect,port=0):
                 target = query.get('next',['/'])[0]
                 self.send_response(303)
                 self.send_header('Set-Cookie','paco='+token+'; HttpOnly; SameSite=Strict; Path=/')
-                self.send_header('Location',target if target in ('/','/meetings','/controls','/advanced','/advanced#intake','/#tasks','/#meetings','/#sessions','/#controls','/#intake') else '/')
+                self.send_header('Location',target if (target.startswith('/#reminder-') and target[11:].isascii() and target[11:].isdigit()) or target in ('/','/meetings','/controls','/advanced','/advanced#intake','/#tasks','/#meetings','/#sessions','/#controls','/#intake') else '/')
                 self.send_header('Referrer-Policy','no-referrer')
                 self.end_headers()
                 return
@@ -937,6 +953,13 @@ def make_server(path,connect,port=0):
                     flow.sample(db)
                     now = time.time()
                     for row in db.execute('SELECT * FROM notification WHERE shown IS NULL AND created>? ORDER BY (reason=?) DESC,id',(now-300,calendar_alerts.REASON)):
+                        if row['reason']==reminder_groups.REASON:
+                            ids=reminder_groups.current(db,row['id'],now)
+                            if len(ids)<2:continue
+                            with db:
+                                for i in set(reminder_groups.members(db,row['id']))-set(ids):
+                                    db.execute('DELETE FROM reminder_delivery WHERE notification=? AND task=?',(row['id'],i))
+                            return self.respond(banner_payload(db,row,now))
                         if row['reason']==calendar_alerts.REASON:
                             if not calendar_alerts.allowed(db,now) or not calendar_alerts.event_for_alert(db,row['id'],now):continue
                             return self.respond(banner_payload(db,row,now))

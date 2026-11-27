@@ -571,6 +571,7 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
 // Only web pages, Mac apps by bundle ID, and Paco's own pages; anything else is ignored.
 - (void)openLink:(NSString *)url {
     if(![url isKindOfClass:NSString.class])return;
+    if([url hasPrefix:@"/#reminder-"]){[self open:url title:@"Paco"];return;}
     if([url isEqual:@"/meetings"]){[self showMeetings];return;}
     if([url isEqual:@"/advanced"]){[self showWorkspace];return;}
     if([url hasPrefix:@"paco-app:"]){

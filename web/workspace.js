@@ -18,7 +18,7 @@ function navigate(tab){window.scrollTo(0,0);if(!['tasks','meetings','sessions','
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>location.hash=b.dataset.tab);
 window.addEventListener('hashchange',()=>navigate(location.hash.slice(1)));navigate(location.hash.slice(1));
 window.addEventListener('message',e=>{if(e.origin!==location.origin)return;if(e.data?.paco==='navigate'&&['tasks','meetings','sessions','controls'].includes(e.data.tab))location.hash=e.data.tab;if(e.data?.paco==='meeting-start'||e.data?.paco==='meeting-stop')window.webkit?.messageHandlers?.paco?.postMessage(e.data.paco);});
-async function refresh(){if(!window.getSelection().isCollapsed)return;const r=await fetch('/api/state');if(!r.ok)throw Error('Paco is reconnecting. Reopen the app if this continues.');state=await r.json();if(!window.getSelection().isCollapsed)return;renderConnection();$('#task-count').textContent=state.tasks.filter(t=>!CLOSED.includes(t.state)&&t.my_responsibility).length+' active tasks';selectOptions($('#project-filter'),chosenProjects().map(p=>[String(p.id),p.name]),'All projects');selectOptions($('#area-filter'),[...new Set(chosenProjects().map(p=>p.area).filter(Boolean))].sort().map(x=>[x,x]),'All areas');selectOptions($('#tag-filter'),[...new Set(state.tasks.flatMap(t=>t.tags||[]))].sort().map(x=>[x,x]),'All tags');selectOptions($('#focus-task'),state.tasks.filter(t=>!CLOSED.includes(t.state)&&t.my_responsibility).map(t=>[String(t.id),t.title]),'No task');renderTasks();renderReview();renderTrackers();renderFocus();if(!chatBusy)renderConversation();}
+async function refresh(){if(!window.getSelection().isCollapsed)return;const r=await fetch('/api/state');if(!r.ok)throw Error('Paco is reconnecting. Reopen the app if this continues.');state=await r.json();if(location.hash.startsWith('#reminder-'))await showReminder();if(!window.getSelection().isCollapsed)return;renderConnection();$('#task-count').textContent=state.tasks.filter(t=>!CLOSED.includes(t.state)&&t.my_responsibility).length+' active tasks';selectOptions($('#project-filter'),chosenProjects().map(p=>[String(p.id),p.name]),'All projects');selectOptions($('#area-filter'),[...new Set(chosenProjects().map(p=>p.area).filter(Boolean))].sort().map(x=>[x,x]),'All areas');selectOptions($('#tag-filter'),[...new Set(state.tasks.flatMap(t=>t.tags||[]))].sort().map(x=>[x,x]),'All tags');selectOptions($('#focus-task'),state.tasks.filter(t=>!CLOSED.includes(t.state)&&t.my_responsibility).map(t=>[String(t.id),t.title]),'No task');renderTasks();renderReview();renderTrackers();renderFocus();if(!chatBusy)renderConversation();}
 function renderTrackers(){
  const trackers=(state.project_trackers||[]).filter(p=>p.user_created),box=$('#project-trackers');
  $('#project-watch-count').textContent='· '+trackers.length;
@@ -111,6 +111,28 @@ $('#focus-pause').onclick=()=>action({action:'focus_pause',id:state.focus_sessio
 $('#focus-resume').onclick=()=>action({action:'focus_resume',id:state.focus_session.id}).catch(e=>notice(e.message));setInterval(tickFocus,1000);
 $('#chat-form').onsubmit=async e=>{e.preventDefault();if(chatBusy)return;const text=$('#message').value.trim();if(!text)return;chatBusy=true;$('#chat-send').disabled=true;$('#chat-status').textContent=$('#chat-mode').value==='plan'?'Drafting tasks…':'Paco is thinking…';try{if($('#chat-mode').value==='plan'){draft=await api({action:'intake_preview',text});renderDraft();$('#chat-status').textContent='Review before adding.';}else{const result=await api({action:'chat',text});proposal=result.proposal;$('#proposal').replaceChildren();if(proposal)$('#proposal').append(E('p',describeProposal(proposal.action),'small muted'),button('Apply suggestion',async()=>{await action({action:'accept_suggestion',id:proposal.id});proposal=null;$('#proposal').replaceChildren();},'primary'));$('#message').value='';$('#chat-status').textContent='';await refresh();renderConversation();}}catch(err){$('#chat-status').textContent=err.message;}finally{chatBusy=false;$('#chat-send').disabled=false;}};
 function renderDraft(){const box=$('#proposal');box.replaceChildren();if(!draft)return;for(const q of draft.plan.questions)box.append(E('p',q,'small muted'));for(const t of draft.plan.tasks){const row=E('div',undefined,'draft-task'),title=E('input');title.value=t.title;title.setAttribute('aria-label','Proposed task title');title.oninput=()=>t.title=title.value;const details=E('details');details.append(E('summary','Details'));const p=draft.plan.projects.find(p=>p.ref===t.project)||state.projects.find(p=>String(p.id)===t.project);details.append(E('p',[p?.name,t.assignee,t.deadline?timeDate(t.deadline):'No deadline',...(t.tags||[])].filter(Boolean).join(' · '),'small muted'),E('p',t.description,'small muted'));row.append(title,button('Remove',()=>{draft.plan.tasks=draft.plan.tasks.filter(x=>x.ref!==t.ref);for(const x of draft.plan.tasks){x.depends_on=x.depends_on.filter(r=>r!==t.ref);if(x.parent===t.ref)x.parent=null;}renderDraft();}));box.append(row,details);}const actions=E('div',undefined,'draft-actions');const apply=button('Add '+draft.plan.tasks.length+' tasks',async()=>{apply.disabled=true;try{const r=await action({action:'intake_apply',id:draft.id,plan:draft.plan});draft=null;box.replaceChildren();$('#message').value='';$('#chat-status').textContent='Added '+r.count+' tasks.';}finally{apply.disabled=false;}},'primary');apply.disabled=!draft.plan.tasks.length;actions.append(apply,button('Discard',()=>{draft=null;box.replaceChildren();$('#chat-status').textContent='';}));box.append(actions);}
+let openReminder=null;
+async function showReminder(){
+ const match=/^#reminder-(\d+)$/.exec(location.hash);
+ const dialog=$('#reminder-dialog');
+ if(!match){if(dialog.open)dialog.close();openReminder=null;return;}
+ const id=Number(match[1]);
+ if(openReminder?.id!==id){
+   const data=await api({action:'reminder_members',id});
+   if(location.hash!==match[0])return;
+   openReminder={id,...data};
+ }
+ const tasks=(state?.tasks||[]).filter(t=>openReminder.tasks.includes(t.id)&&t.my_responsibility);
+ $('#reminder-label').textContent=openReminder.label;
+ $('#reminder-items').replaceChildren(...tasks.map(taskRow));
+ if(!dialog.open)dialog.showModal();
+}
+$('#close-reminder').onclick=()=>$('#reminder-dialog').close();
+$('#reminder-dialog').onclose=()=>{if(location.hash.startsWith('#reminder-'))location.hash='tasks';};
+$('#split-reminder').onclick=async()=>{
+ try{await api({action:'separate_reminders',id:openReminder.id});$('#reminder-dialog').close();notice('Separate reminders saved.');}catch(e){notice(e.message);}
+};
+window.addEventListener('hashchange',()=>showReminder().catch(e=>notice(e.message)));
 refresh().catch(e=>notice(e.message));setInterval(()=>refresh().catch(()=>{renderConnection('Reconnecting…');}),15000);
 
 function describeProposal(a){if(a.action==='add')return 'Add task: '+a.title+(a.deadline?' · Due '+a.deadline:'');if(a.action==='estimate')return 'Update the time estimate and deadline for '+(state.tasks.find(t=>t.id===a.id)?.title||'this task');if(a.action==='preference')return 'Change availability to '+a.value;if(a.action==='automation_propose')return 'Create a routine: '+a.title;return 'Review Paco’s proposed change';}

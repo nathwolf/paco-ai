@@ -101,6 +101,7 @@ def find_duplicate(db,title,owner='',project=None,exclude=None,deadline=None):
         LEFT JOIN ownership o ON o.task=t.id LEFT JOIN task_project p ON p.task=t.id
         LEFT JOIN details d ON d.task=t.id ORDER BY t.id'''):
         if row['id']==exclude or ' '.join(unicodedata.normalize('NFKC',row['title']).casefold().split())!=title:continue
+        if exclude and db.execute('SELECT 1 FROM reminder_separate WHERE a=? AND b=?',sorted((exclude,row['id']))).fetchone():continue
         if row['state'] not in ('open','focus','blocked'):continue
         if info(db,row['id'])['status']=='duplicate':continue
         if row['project']!=project:continue
