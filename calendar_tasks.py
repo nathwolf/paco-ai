@@ -29,7 +29,10 @@ instead of creating another task. A document checklist inside an event often sup
 someone else's work to the user. Return {actions:[{event:"supplied event id",owner:"one supplied identity",
 title:"concrete action",quote:"exact substring of title or description",responsibility:"execute|review|decide|follow_up",
 timing:"on_event|before_event|unspecified",existing_task:null|number}]}. Timing relates only to an explicitly scheduled action
-or preparation required for that event; otherwise use unspecified. Empty actions is valid.'''
+or preparation required for that event; otherwise use unspecified.
+recurringEventId identifies a repeated series. Each occurrence has its own action and completion.
+Do not attach a later occurrence to a completed earlier occurrence or merge distinct dates.
+An explicitly recurring task may cover the same action across its series. Empty actions is valid.'''
 
 
 def initialize(db):
@@ -115,6 +118,11 @@ def sync(db, config, complete=None, now=None):
             deadline = None
             if timing != 'unspecified':
                 deadline = event['end']-1 if event.get('all_day') and timing=='on_event' else event['start']
+            if target is not None and event.get('recurringEventId'):
+                explicit=db.execute('SELECT 1 FROM task_recurrence WHERE task=? AND enabled=1',(target,)).fetchone()
+                linked=db.execute('SELECT 1 FROM calendar_task_link WHERE task=? AND event!=?',(target,event['id'])).fetchone()
+                if not explicit and linked:
+                    target=None
             if target is not None:
                 if not db.execute('SELECT 1 FROM task WHERE id=?',(target,)).fetchone():continue
                 if attention.eligible(db,target) and db.execute("SELECT 1 FROM task WHERE id=? AND state IN ('open','focus','blocked')",(target,)).fetchone():

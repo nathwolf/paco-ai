@@ -98,10 +98,12 @@ def change_focus(db,ident,action,now,minutes=5):
 
 def edit_task(db, data, commit=True):
     ident=int(data['id']) if data.get('id') is not None else None;changes=data.get('changes',{})
-    allowed={'title','description','tags','priority','urgent','deadline','estimate_minutes','assignee','project','responsibility'}
+    allowed={'title','description','tags','priority','urgent','deadline','estimate_minutes','assignee','project','responsibility','recurrence'}
     if not isinstance(changes,dict) or set(changes)-allowed:raise ValueError('Unsupported task edit')
-    fields=clean_task({k:v for k,v in changes.items() if k!='project'},partial=True)
+    fields=clean_task({k:v for k,v in changes.items() if k not in ('project','recurrence')},partial=True)
     if ident is None and not fields.get('title'):raise ValueError('A task needs a title')
+    import recurring_tasks
+    recurrence=recurring_tasks.validate(changes.get('recurrence')) if 'recurrence' in changes else None
     project=changes.get('project')
     if project is not None and (type(project) is not int or not db.execute('SELECT 1 FROM project WHERE id=?',(project,)).fetchone()):raise ValueError('Unknown project')
     with (db if commit else nullcontext()):
@@ -138,4 +140,5 @@ def edit_task(db, data, commit=True):
         if 'project' in changes and ((previous_project and previous_project['project'] != project) or (not previous_project and project is not None)):
             db.execute("INSERT OR REPLACE INTO task_project VALUES(?,?,'manual')",(ident,project))
             db.execute('DELETE FROM task_catalog WHERE task=?',(ident,))
+        if 'recurrence' in changes:recurring_tasks.save(db,ident,recurrence,commit=False)
     return {'ok':True,'id':ident}

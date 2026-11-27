@@ -48,3 +48,34 @@ class RecurringAndDelivery(unittest.TestCase):
   self.assertEqual(self.db.execute('SELECT deadline FROM details WHERE task=1').fetchone()[0],due)
 
 if __name__=='__main__':unittest.main()
+
+class RepeatEditor(RecurringAndDelivery):
+ def test_monthly_first_and_31st(self):
+  rule=r.validate(dict(frequency='monthly',zone='Europe/Paris',monthday=1))
+  due=r.next_occurrence(self.stamp('2026-12-31T17:00:00','Europe/Paris'),rule)
+  self.assertEqual(due,self.stamp('2027-01-01T09:00:00','Europe/Paris'))
+  rule['monthday']=31
+  due=r.next_occurrence(self.stamp('2027-01-31T10:00:00','Europe/Paris'),rule)
+  self.assertEqual(due,self.stamp('2027-03-31T09:00:00','Europe/Paris'))
+ def test_editor_save_disable_and_atomic_validation(self):
+  import workspace
+  data=dict(title='Send monthly report',recurrence=dict(frequency='monthly',zone='Europe/Paris',monthday=1))
+  task=workspace.edit_task(self.db,{'changes':data})['id']
+  due=self.db.execute('SELECT due FROM task WHERE id=?',(task,)).fetchone()[0]
+  workspace.edit_task(self.db,{'id':task,'changes':data})
+  self.assertEqual(self.db.execute('SELECT due FROM task WHERE id=?',(task,)).fetchone()[0],due)
+  with self.assertRaises(ValueError):workspace.edit_task(self.db,{'changes':dict(data,recurrence={'monthday':32})})
+  self.assertEqual(self.db.execute('SELECT count(*) FROM task').fetchone()[0],2)
+  workspace.edit_task(self.db,{'id':task,'changes':{'recurrence':None}})
+  with self.db:self.db.execute("UPDATE task SET state='done' WHERE id=?",(task,))
+  r.advance(self.db,due)
+  self.assertEqual(self.db.execute('SELECT state FROM task WHERE id=?',(task,)).fetchone()[0],'done')
+ def test_calendar_series_and_patterns_do_not_create_tasks(self):
+  import calendar_tasks,calendar_series
+  events=[dict(id='cal:'+str(i),title='Weekly review',start=self.stamp('2026-11-02T10:00:00')+i*7*86400) for i in range(3)]
+  events.append(dict(id='other:moved',title='Standup',start=1000,recurringEventId='series1',iCalUID='uid1',originalStartTime={'dateTime':'2026-11-03T10:00:00Z'}))
+  with self.db:calendar_tasks.replace_context(self.db,events)
+  found=calendar_series.info(self.db)
+  self.assertEqual(found['cal:0']['label'],'Weekly pattern')
+  self.assertEqual(found['other:moved']['id'],'uid1')
+  self.assertEqual(self.db.execute('SELECT count(*) FROM task').fetchone()[0],1)

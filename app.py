@@ -36,6 +36,7 @@ import mac_focus
 import task_dates
 import calendar_alerts
 import scheduled_checks
+import calendar_series
 import reminder_groups
 import intake
 import company_sync
@@ -388,8 +389,11 @@ def state(db):
         task['assignee']=owner[0] if owner else ''
         task['parent']=extra['parent'] if extra else None
         task['dependencies']=[r[0] for r in db.execute('SELECT prerequisite FROM dependency WHERE task=?',(task['id'],))]
-        recurrence=db.execute('SELECT zone,weekday,hour,minute,occurrence,enabled FROM task_recurrence WHERE task=?',(task['id'],)).fetchone()
+        recurrence=db.execute('SELECT zone,weekday,hour,minute,occurrence,enabled,frequency,monthday FROM task_recurrence WHERE task=?',(task['id'],)).fetchone()
         task['recurrence']=dict(recurrence) if recurrence else None
+        if recurrence and recurrence['enabled']:
+            import recurring_tasks
+            task['recurrence']['label']=recurring_tasks.label(recurrence)
     best = planning.next_reminder(db,now)
     config = settings()
     sessions=[]
@@ -414,7 +418,7 @@ def state(db):
             'suggestions':workflows.recurring(db) if planning.setting(db,'discover_automations','off')=='on' else [],
             'absences':[dict(r) for r in db.execute('SELECT * FROM absence WHERE end>?',(now,))],
             'patterns':[dict(r) for r in db.execute('SELECT * FROM learned')],
-            'calendar':[dict(r) for r in db.execute('SELECT * FROM calendar_event ORDER BY start')],
+            'calendar':calendar_series.events(db),
             'conflicts':calendar_planning.conflicts(db),
             'connector_accounts':config.get('connectors',{}),
             'mattermost_proposals':[dict(r) for r in db.execute("SELECT p.id,p.task,t.title,p.changes FROM mattermost_proposal p JOIN task t ON t.id=p.task WHERE p.status='pending' ORDER BY p.id DESC LIMIT 20")],
@@ -431,6 +435,8 @@ def act(db,path,connect,data):
     action = data['action']
     now = time.time()
     if action=='task_edit':return workspace.edit_task(db,data)
+    if action=='recurrence':
+        return workspace.edit_task(db,{'id':data['id'],'changes':{'recurrence':data.get('recurrence')}})
     if action=='focus_start':return workspace.start(db,data,now)
     if action in ('focus_stop','focus_pause','focus_resume'):
         return workspace.change_focus(db,int(data['id']),action.removeprefix('focus_'),now,data.get('minutes',5))
@@ -558,7 +564,7 @@ def act(db,path,connect,data):
         startup.configure(bool(data['enabled']),path)
         return {'ok':True}
     if action == 'add':
-        fields = {k: data[k] for k in ('title','description','tags','project','assignee','responsibility','estimate_minutes','deadline') if k in data}
+        fields = {k: data[k] for k in ('title','description','tags','project','assignee','responsibility','estimate_minutes','deadline','recurrence') if k in data}
         fields.update(priority=int(data.get('priority',3)), urgent=bool(data.get('critical',False)))
         if isinstance(fields.get('deadline'),str):
             fields['deadline'] = task_dates.timestamp(fields['deadline'])
@@ -663,7 +669,7 @@ def act(db,path,connect,data):
         if not config:
             raise ValueError('Choose a model in Settings. Tasks and reminders work without one.')
         payload = {'request':text,'local_time':time.strftime('%Y-%m-%d %H:%M %Z'),
-                   'mode':planning.setting(db,'mode','work'),'tasks':state(db)['tasks'][:80],
+                   'timezone':data.get('timezone','Europe/Paris'),'mode':planning.setting(db,'mode','work'),'tasks':state(db)['tasks'][:80],
                    'project_trackers':project_tracking.summaries(db,now),'project_briefs':project_brains.context(db),
                    'preferences':dict(db.execute('SELECT key,value FROM preference')),
                    'accepted_patterns':[dict(r) for r in db.execute("SELECT key,value FROM learned WHERE status='accepted'")],
@@ -679,15 +685,16 @@ def act(db,path,connect,data):
             'Holidays allow explicitly urgent work only. Return JSON with answer (string) and optionally proposal (object). '
             'A proposal is a user-reviewable single action, never already executed. Supported proposal shapes: '
             '{action:"preference",key:"mode",value:"holiday"|"work"|"paused"}; '
-            '{action:"add",title:string,priority:1..5,description?:string,deadline?:ISO date or timestamp with offset,tags?:string[],project?:existing numeric project ID,assignee?:string,estimate_minutes?:number}; {action:"estimate",id:number,minutes:number,deadline:ISO8601}; '
+            '{action:"add",title:string,priority:1..5,description?:string,deadline?:ISO date or timestamp with offset,tags?:string[],project?:existing numeric project ID,assignee?:string,estimate_minutes?:number,recurrence?:{frequency:"weekly"|"monthly",zone:string,weekday:0..6,monthday:1..31,hour:0..23,minute:0..59}}; {action:"estimate",id:number,minutes:number,deadline:ISO8601}; '
+            '{action:"recurrence",id:number,recurrence:{frequency:"weekly"|"monthly",zone:string,weekday:0..6,monthday:1..31,hour:0..23,minute:0..59}|null}; '
             '{action:"automation_propose",title:string,interval:seconds,trigger:"schedule"}. '
-            'For adds, put explicit timing in deadline, resolve relative dates using local_time, and retain conditions in description. Only propose changes the user requested. Do not infer urgent flags.',payload,'chat')
+            'For repeated tasks use recurrence, with Monday=0 and Sunday=6. Every Monday is weekly weekday=0; on the 1st of each month is monthly monthday=1. Use the supplied timezone and 09:00 if no time is given, and state that choice. For adds, put explicit timing in deadline, resolve relative dates using local_time, and retain conditions in description. Only propose changes the user requested. Do not infer urgent flags.',payload,'chat')
         response = {'answer':str(answer.get('answer','No answer returned.')),'metrics':metrics}
         with db:
             db.execute("INSERT INTO conversation(role,text,at) VALUES('user',?,?)",(text,now))
             db.execute("INSERT INTO conversation(role,text,at) VALUES('assistant',?,?)",(response['answer'],now))
             proposal = answer.get('proposal')
-            if isinstance(proposal,dict) and proposal.get('action') in ('preference','add','estimate','automation_propose'):
+            if isinstance(proposal,dict) and proposal.get('action') in ('preference','add','estimate','automation_propose','recurrence'):
                 ident = secrets.token_hex(16)
                 db.execute("INSERT INTO suggestion VALUES(?,?,'proposed')",(ident,json.dumps(proposal)))
                 response['proposal']={'id':ident,'action':proposal}

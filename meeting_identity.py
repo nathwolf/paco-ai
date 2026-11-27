@@ -100,10 +100,13 @@ def candidates(db,now=None):
 def upcoming(db,now=None,hidden=False):
     now=time.time() if now is None else now
     result=[]
+    import calendar_series
+    series=calendar_series.info(db)
     for r in calendar_rows(db,'e.end>? AND e.start<?',(now,now+7*86400)):
         reason=hidden_reason(r,event_people(r))
         if bool(reason)!=hidden:continue
         item={k:r[k] for k in ('id','title','start','end','url')}
+        item['recurrence']=series.get(r['id'])
         if reason:item['reason']=reason
         result.append(item)
     return result if hidden else result[:12]
