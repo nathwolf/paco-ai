@@ -106,6 +106,22 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+    // Standard responder-chain editing also works inside WKWebView and its frames.
+    NSMenu *mainMenu=[NSMenu new];
+    NSMenuItem *appItem=[NSMenuItem new];appItem.submenu=[NSMenu new];
+    [appItem.submenu addItemWithTitle:@"Quit Paco" action:@selector(terminate:) keyEquivalent:@"q"];
+    [mainMenu addItem:appItem];
+    NSMenuItem *editItem=[[NSMenuItem alloc] initWithTitle:@"Edit" action:nil keyEquivalent:@""];
+    NSMenu *edit=[[NSMenu alloc] initWithTitle:@"Edit"];
+    [edit addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+    NSMenuItem *redo=[edit addItemWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"z"];
+    redo.keyEquivalentModifierMask=NSEventModifierFlagCommand|NSEventModifierFlagShift;
+    [edit addItem:NSMenuItem.separatorItem];
+    [edit addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+    [edit addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+    [edit addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+    [edit addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    editItem.submenu=edit;[mainMenu addItem:editItem];NSApp.mainMenu=mainMenu;
     self.seen=[NSMutableSet set];NSArray *args=NSProcessInfo.processInfo.arguments;
     self.url=[NSURL URLWithString:args[1]];self.assets=args[2];
     self.expressions=[NSJSONSerialization JSONObjectWithData:[NSData dataWithContentsOfFile:[self.assets stringByAppendingPathComponent:@"expressions.json"]] options:0 error:nil];
@@ -405,7 +421,7 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     CGFloat chipLimit=322;
     if(categoryText.length){
         NSTextField *categoryLabel=[NSTextField labelWithString:categoryText];categoryLabel.font=rounded(10,NSFontWeightSemibold);
-        categoryLabel.textColor=color(0x5E6B62);categoryLabel.lineBreakMode=NSLineBreakByTruncatingTail;
+        categoryLabel.selectable=YES;categoryLabel.textColor=color(0x5E6B62);categoryLabel.lineBreakMode=NSLineBreakByTruncatingTail;
         categoryLabel.toolTip=[category[@"name"] isKindOfClass:NSString.class]?category[@"name"]:categoryText;
         [categoryLabel setAccessibilityLabel:[@"Project " stringByAppendingString:categoryLabel.toolTip]];[categoryLabel sizeToFit];
         CGFloat categoryWidth=MIN(80,NSWidth(categoryLabel.frame));
@@ -416,7 +432,7 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     for(NSUInteger i=0;i<badges.count&&i<2;i++){
         NSDictionary *badge=badges[i];if(![badge isKindOfClass:NSDictionary.class]||![badge[@"text"] isKindOfClass:NSString.class])continue;
         NSString *chipTone=[badge[@"tone"] isKindOfClass:NSString.class]?badge[@"tone"]:@"gray";
-        NSTextField *label=[NSTextField labelWithString:badge[@"text"]];label.font=rounded(10,NSFontWeightSemibold);[label sizeToFit];
+        NSTextField *label=[NSTextField labelWithString:badge[@"text"]];label.selectable=YES;label.font=rounded(10,NSFontWeightSemibold);[label sizeToFit];
         CGFloat width=i==0?NSWidth(label.frame)+18:NSWidth(label.frame);
         if(x+width>chipLimit){
             if(i!=0||chipLimit-x<30)break;
@@ -439,11 +455,12 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     NSString *titleText=[value[@"title"] isKindOfClass:NSString.class]?value[@"title"]:(value[@"message"]?:@"");
     NSTextField *title=[NSTextField wrappingLabelWithString:titleText];title.font=rounded(12.5,NSFontWeightSemibold);title.textColor=color(0x1F3326);title.maximumNumberOfLines=value[@"task"]!=nil&&value[@"task"]!=NSNull.null?4:3;title.lineBreakMode=NSLineBreakByWordWrapping;title.cell.truncatesLastVisibleLine=YES;title.toolTip=titleText;
     CGFloat titleHeight=MIN(value[@"task"]!=nil&&value[@"task"]!=NSNull.null?62:46,ceil([title.cell cellSizeForBounds:NSMakeRect(0,0,242,1000)].height));
+    title.selectable=YES;
     title.frame=NSMakeRect(108,height-38-titleHeight,242,titleHeight);[content addSubview:title];
     NSString *nudgeText=[value[@"nudge"] isKindOfClass:NSString.class]?value[@"nudge"]:@"";
     if(nudgeText.length&&(!value[@"task"]||value[@"task"]==NSNull.null)){
         NSTextField *nudge=[NSTextField labelWithString:nudgeText];nudge.font=rounded(10.5,NSFontWeightMedium);nudge.textColor=color(toneText(tone));nudge.lineBreakMode=NSLineBreakByTruncatingTail;
-        nudge.frame=NSMakeRect(108,height-(38+titleHeight+3)-16,242,16);[content addSubview:nudge];
+        nudge.selectable=YES;nudge.frame=NSMakeRect(108,height-(38+titleHeight+3)-16,242,16);[content addSubview:nudge];
     }
 
     self.task=[value[@"task"] isKindOfClass:NSNumber.class]?value[@"task"]:nil;

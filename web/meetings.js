@@ -16,7 +16,7 @@ const KINDS={action:'Action',decision:'Decision',question:'Open question',propos
 const COMMITMENTS={confirmed:'Agreed',conditional:'Waiting on a condition',proposed:'Suggested only',unclear:'Unclear',completed:'Already done',retracted:'Withdrawn'};
 const REVIEW={reviewed:'Reviewed',accepted:'In your plan',dismissed:'Dismissed'};
 const isMe=owner=>{const me=(state?.preferences?.me||'').trim().toLowerCase();return !!me&&!!owner&&owner.trim().toLowerCase()===me;};
-async function refresh(){const r=await fetch('/api/meetings');if(!r.ok)throw Error('Reopen Paco from its menu bar');state=await r.json();
+async function refresh(){if(!window.getSelection().isCollapsed)return;const r=await fetch('/api/meetings');if(!r.ok)throw Error('Reopen Paco from its menu bar');state=await r.json();if(!window.getSelection().isCollapsed)return;
  const event=(state.calendar_candidates||[]).find(e=>e.id===state.suggested_event);$('#calendar-context').hidden=false;$('#calendar-context').textContent=event?'Next up: '+event.title+' · '+when(event.start):'No nearby calendar meeting — start whenever you need.';
  $('#start-meeting').hidden=!nativePaco||!!state.active;$('#stop-meeting').hidden=!nativePaco||!state.active;$('#stop-meeting').disabled=!!state.active?.finishing;
  $('#capture-status').textContent=state.active?(state.active.finishing?'Finishing local transcription…':state.active.paused?'Meeting capture paused':'Meeting capture is active'):state.speech.state==='ready'||state.speech.downloaded?'Ready to capture your call':state.speech.state==='loading'?'Preparing local speech recognition…':'Prepare speech recognition before your first meeting';
