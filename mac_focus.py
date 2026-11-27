@@ -1,12 +1,13 @@
-"""Read the current macOS Focus via Apple's Get Current Focus shortcut.
+"""Local Focus observations, reserved for a reliable native status provider.
 
-Only a boolean is retained locally. No private APIs, disk permissions or model calls.
+No provider is enabled in the locally signed build. In particular, do not poll
+Shortcuts: running a shortcut repeatedly displays macOS's activity indicator.
+Unknown status must never be presented as proof that Mac Focus is off.
 """
-import subprocess,sys,time
+import time
 
 REASON='macOS Focus is on'
 TTL=45
-SHORTCUT='Paco Focus Status'
 
 
 def initialize(db):
@@ -18,25 +19,12 @@ def observe(db,active,now=None):
     with db:db.execute('INSERT OR REPLACE INTO system_focus VALUES(1,?,?)',(active,time.time() if now is None else now))
 
 
-def read():
-    result=subprocess.run(['/usr/bin/shortcuts','run',SHORTCUT,'--output-type','public.plain-text'],capture_output=True,text=True,timeout=10,check=True)
-    # Get Current Focus yields its name when enabled, and no value when disabled.
-    return bool(result.stdout.strip())
-
-
-def sample(db,reader=None):
-    if sys.platform!='darwin' and reader is None:return
-    try:value=(reader or read)()
-    except (OSError,subprocess.SubprocessError):value=None
-    observe(db,value)
-
-
 def status(db,now=None):
     now=time.time() if now is None else now
     row=db.execute('SELECT * FROM system_focus WHERE id=1').fetchone()
     fresh=bool(row and 0<=now-row['at']<=TTL)
     value=bool(row['active']) if fresh and row['active'] is not None else None
-    message=REASON if value else 'macOS Focus is off' if value is False else 'macOS Focus unavailable — check the Paco Focus Status shortcut'
+    message=REASON if value else 'macOS Focus is off' if value is False else 'Automatic Mac Focus detection unavailable in this build. Use a Paco focus session or pause reminders.'
     return {'active':value,'message':message}
 
 

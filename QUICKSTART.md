@@ -484,17 +484,14 @@ not edited. The desktop needs to run for this local recurrence to advance.
 
 ### macOS Focus
 
-Paco automatically mutes banners, sounds, call-outs and task reminders while macOS
-Focus is on, independently of the optional work-app flow detector. Source syncing
-continues. It also hides an already-visible banner, and resumes normal reminder
-eligibility after Focus turns off; Paco focus sessions and snoozes still apply.
+Automatic macOS Focus detection is currently unavailable in the locally signed
+build. Controls → Protect my flow reports this explicitly. Use a Paco focus
+session or pause reminders to silence Paco; background source syncing continues.
 
-On this Mac, the **Paco Focus Status** shortcut is already installed. Keep that name.
-For another Mac, create a shortcut with that exact name and one **Get Current Focus**
-action (an optional **Stop and Output Current Focus** action is also supported).
-Paco runs it locally through Apple's Shortcuts command about every 10 seconds.
-It retains only the on/off flag, not the Focus name, and sends nothing to a model
-or company server. This works with custom and scheduled Focus modes without Full
-Disk Access or a special signing entitlement. Controls → Protect my flow shows the
-current status; if the shortcut is missing or fails, it reports status unavailable
-rather than claiming Focus is off. A stale reading expires after 45 seconds.
+The previous Shortcuts polling workaround has been removed because it repeatedly
+displayed a macOS menu-bar activity indicator. Paco no longer runs Shortcuts to
+read Focus, and the old **Paco Focus Status** shortcut is no longer needed.
+The internal notification gates remain ready for a reliable native provider, but
+unknown status is not proof that Mac Focus is off. Any previous observation expires
+after 45 seconds. Automatic Mac Focus support must be validated with Focus both
+on and off before being advertised again.

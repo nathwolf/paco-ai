@@ -1,8 +1,6 @@
-import tempfile,unittest,time,json
+import tempfile,unittest
 from pathlib import Path
 import app,paco,planning,mac_focus
-from unittest.mock import patch,Mock
-import subprocess
 
 class MacFocus(unittest.TestCase):
  def setUp(self):
@@ -25,14 +23,9 @@ class MacFocus(unittest.TestCase):
   self.assertIn('unavailable',mac_focus.status(self.db,122)['message'])
  def test_invalid_heartbeat_rejected(self):
   with self.assertRaises(ValueError):mac_focus.observe(self.db,'false')
- def test_shortcut_name_means_on_and_successful_empty_output_means_off(self):
-  with patch('mac_focus.subprocess.run',return_value=Mock(stdout='Work\n')) as run:
-   self.assertTrue(mac_focus.read())
-   self.assertEqual(run.call_args.args[0],['/usr/bin/shortcuts','run','Paco Focus Status','--output-type','public.plain-text'])
-   self.assertEqual(run.call_args.kwargs['timeout'],10)
-  with patch('mac_focus.subprocess.run',return_value=Mock(stdout='')):self.assertFalse(mac_focus.read())
- def test_reader_failure_is_unknown_not_false_off(self):
-  mac_focus.sample(self.db,reader=Mock(side_effect=subprocess.TimeoutExpired('shortcuts',10)))
+ def test_without_provider_shows_limitation_and_manual_alternative(self):
   self.assertIsNone(mac_focus.status(self.db)['active'])
+  self.assertIn('unavailable in this build',mac_focus.status(self.db)['message'])
+  self.assertIn('Paco focus session',mac_focus.status(self.db)['message'])
 
 

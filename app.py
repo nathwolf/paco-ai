@@ -290,9 +290,6 @@ def worker(path, connect, stop):
     def sample_flow():
         with closing(connect(path)) as db:
             flow.sample(db)
-    def sample_mac_focus():
-        with closing(connect(path)) as db:
-            mac_focus.sample(db)
     def sync_company():
         with closing(connect(path)) as db:
             attention.configure(db,settings())
@@ -340,8 +337,7 @@ def worker(path, connect, stop):
     current_mattermost=lambda:settings().get('connectors',{}).get('mattermost')
     threading.Thread(target=mattermost_events.listen,args=(stop,chat_wake,current_mattermost,gate,report),daemon=True).start()
     threading.Thread(target=run_loop,args=('Mattermost chat',stop,30,mattermost_chat,report,gate,chat_wake),daemon=True).start()
-    sample_mac_focus()
-    for name,interval,step in (('macOS Focus',10,sample_mac_focus),('task relationships',300,reconcile_obligations),('responsibility learning',60,admit_responsibilities),('calendar actions',60,calendar_actions),('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
+    for name,interval,step in (('task relationships',300,reconcile_obligations),('responsibility learning',60,admit_responsibilities),('calendar actions',60,calendar_actions),('project trackers',30,track_projects),('task catalog',20,catalog_tasks),('company tasks',30,sync_company),('sync',SYNC_INTERVAL,sync),('desktop capture',CAPTURE_INTERVAL,capture),('flow protection',FLOW_INTERVAL,sample_flow),('call-outs',CALLOUT_INTERVAL,call_outs)):
         threading.Thread(target=run_loop,args=(name,stop,interval,step,report,gate),daemon=True).start()
     try:
         run_loop('reminders',stop,TICK_INTERVAL,reminders,report,gate)
