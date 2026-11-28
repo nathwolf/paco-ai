@@ -77,10 +77,10 @@ def initialize(db):
 PLAN_REASONS = ('Your daily plan','Tu plan de hoy')
 # Native banner wording. The native app falls back to English for any missing key.
 BANNER_LABELS = {
-    'en': {'focus':'Focus','later':'Later','done':'Done','ok':'Got it','reply':'Reply','send':'Send','show_plan':'Show plan',
+    'en': {'focus':'Focus','later':'Later','done':'Done','ok':'Got it','reply':'Reply','send':'Send','show_plan':'Show plan','hide_plan':'Less','more_details':'More details','plan_empty':'Nothing to schedule right now.','plan_more':'+{count} more blocks','plan_one_more':'+1 more block','plan_steps':'Your next steps','plan_timing':'Suggested timing',
            'apply':'Apply','cancel':'Cancel','placeholder':'Reply to Paco…','focus_tip':'Focus for 25 minutes','later_tip':'Snooze for 15 minutes',
            'prompt':'Tell me what changed, ask for help, or say when to check back.','dismiss':'Dismiss notification','thinking':'Thinking…','open':'Open','open_tip':'Open it and focus for 25 minutes'},
-    'es': {'focus':'Enfocar','later':'Luego','done':'Hecho','ok':'Entendido','reply':'Responder','send':'Enviar','show_plan':'Ver plan',
+    'es': {'focus':'Enfocar','later':'Luego','done':'Hecho','ok':'Entendido','reply':'Responder','send':'Enviar','show_plan':'Ver plan','hide_plan':'Menos','more_details':'Más detalles','plan_empty':'Nada que programar por ahora.','plan_more':'+{count} bloques más','plan_one_more':'+1 bloque más','plan_steps':'Tus próximos pasos','plan_timing':'Horario sugerido',
            'apply':'Aplicar','cancel':'Cancelar','placeholder':'Responde a Paco…','focus_tip':'Concentrarme 25 minutos','later_tip':'Posponer 15 minutos',
            'prompt':'Cuéntame qué cambió, pide ayuda o dime cuándo volver a preguntar.','dismiss':'Cerrar aviso','thinking':'Pensando…','open':'Abrir','open_tip':'Ábrelo y concéntrate 25 minutos'},
 }
@@ -168,8 +168,9 @@ def _banner_content(db, row, now=None):
         value['title'] = task['title']
         value['nudge'] = message[:-len(task['title'])-2].strip() if message.endswith(': '+task['title']) else ''
     elif value.get('reason') in PLAN_REASONS:
-        value['open'] = '/advanced'
+        value['open'] = '/#tasks'
         plan = planning.morning_plan(db,now)
+        value['plan'] = plan
         value['badges'] = [{'text':'Tu plan de hoy' if spanish else 'Today’s plan','tone':'blue'}]
         if plan:
             count = len(plan)
@@ -177,7 +178,7 @@ def _banner_content(db, row, now=None):
             value['title'] = plan[0]['title']
             value['nudge'] = 'Empieza por aquí' if spanish else 'Start with this one'
         else:
-            value['title'] = message
+            value['title'] = labels(db)['plan_empty']
     elif value.get('reason')=='Notification preview':
         mood = value.get('mood') or 'friendly'
         tone = {'friendly':'green','impatient':'orange'}.get(mood,'red')
@@ -553,6 +554,12 @@ def act(db,path,connect,data):
             result['reply_answer']=last['answer']
             if last['status']=='pending' and now-last['created']<=600:result['pending_reply']=last['id']
         return result
+    if action=='plan_preview':
+        # Read again on expansion so completed or postponed work disappears immediately.
+        row=db.execute('SELECT * FROM notification WHERE id=?',(data['notification'],)).fetchone()
+        if not row or row['reason'] not in PLAN_REASONS:
+            raise ValueError('Choose a daily plan notification')
+        return banner_payload(db,row,now)
     if action=='setup_finish':
         import startup
         startup.configure(bool(data.get('autostart',True)),path)

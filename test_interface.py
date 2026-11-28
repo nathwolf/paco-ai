@@ -59,7 +59,7 @@ class Server(unittest.TestCase):
             db.execute("INSERT INTO notification(task,message,mood,reason,created) VALUES(NULL,'Your plan has 2 work blocks. First: A','friendly','Your daily plan',?)", (now,))
         request = urllib.request.Request(self.base + '/api/banner', headers={'Authorization': 'Bearer ' + self.token})
         value = json.load(urllib.request.urlopen(request, timeout=3))
-        self.assertEqual(value['open'], '/advanced')
+        self.assertEqual(value['open'], '/#tasks')
         self.assertEqual(value['labels']['show_plan'], 'Show plan')
         self.assertEqual(set(value['labels']), set(app.BANNER_LABELS['es']))
 
@@ -102,7 +102,7 @@ class Wording(unittest.TestCase):
             row = db.execute('SELECT * FROM notification').fetchone()
             value = app.banner_payload(db, row)
         self.assertEqual(value['labels']['done'], 'Hecho')
-        self.assertEqual(value['open'], '/advanced')
+        self.assertEqual(value['open'], '/#tasks')
 
 
 class BannerContent(unittest.TestCase):
@@ -119,6 +119,37 @@ class BannerContent(unittest.TestCase):
         self.assertEqual(value['title'], 'Prepare Q4 slides')
         self.assertEqual(value['nudge'], 'Come on. Take the first step')
         self.assertEqual(value['badges'], [{'text': 'Urgent', 'tone': 'red'}, {'text': '2 days late', 'tone': 'red'}, {'text': '~180 min', 'tone': 'gray'}])
+
+    def test_plan_expansion_refreshes_eligible_work_without_mutating_tasks(self):
+        now = 1800000000
+        with tempfile.TemporaryDirectory() as tmp, closing(paco.connect(Path(tmp) / 'db')) as db:
+            app.initialize(db)
+            with patch('app.time.time', return_value=now):
+                ids = [app.act(db, Path(tmp)/'db', paco.connect, {'action':'add','title':title})['id']
+                       for title in ('Write outline','Review budget','Prepare demo','Later work','Juan work')]
+            with db:
+                db.execute("UPDATE task SET due=? WHERE id=?", (now+86400, ids[3]))
+                import attention
+                attention.record(db, ids[4], 'reference', 'Belongs to Juan', 'direct')
+                note = db.execute("INSERT INTO notification(message,mood,reason,created) VALUES('Old plan','friendly',?,?)", (app.PLAN_REASONS[0],now)).lastrowid
+            row = db.execute('SELECT * FROM notification WHERE id=?',(note,)).fetchone()
+            value = app.banner_payload(db,row,now)
+            self.assertEqual({p['id'] for p in value['plan']},set(ids[:3]))
+            self.assertEqual(value['link']['url'],'/#tasks')
+            with db:
+                db.execute("UPDATE task SET state='done' WHERE id=?",(ids[0],))
+                db.execute("UPDATE task SET due=? WHERE id=?",(now+86400,ids[1]))
+            before = list(db.execute('SELECT * FROM task'))
+            with patch('app.time.time',return_value=now):
+                fresh = app.act(db,Path(tmp)/'db',paco.connect,{'action':'plan_preview','notification':note})
+            self.assertEqual([p['id'] for p in fresh['plan']],[ids[2]])
+            self.assertEqual(list(db.execute('SELECT * FROM task')),before)
+            with db:db.execute("UPDATE task SET state='done' WHERE id=?",(ids[2],))
+            empty = app.banner_payload(db,row,now)
+            self.assertEqual(empty['plan'],[])
+            self.assertEqual(empty['title'],app.BANNER_LABELS['en']['plan_empty'])
+            with self.assertRaises(ValueError):
+                app.act(db,Path(tmp)/'db',paco.connect,{'action':'plan_preview','notification':note+1})
 
     def test_chip_tones_follow_meaning(self):
         now = 1_800_000_000

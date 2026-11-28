@@ -43,6 +43,7 @@ int captureContext(NSArray *args);
 @property BOOL quietFocus;
 @property BOOL startingMeeting;
 @property BOOL composing;
+@property BOOL showingPlan;
 @property BOOL replying;
 @property NSTextField *replyField;
 @property NSTextView *replyStatus;
@@ -175,7 +176,7 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)app hasVisibleWindows:(BOOL)visible { [self show];return YES; }
 - (void)show { [self open:@"/" title:@"Paco — Tasks"]; }
 - (void)showControls { [self open:@"/#controls" title:@"Paco — Controls"]; }
-- (void)showWorkspace { [self open:@"/advanced" title:@"Paco — Workspace"]; }
+- (void)showWorkspace { [self open:@"/#tasks" title:@"Paco"]; }
 - (void)showIntake { [self open:@"/#intake" title:@"Paco — Tasks"]; }
 - (void)open:(NSString *)path title:(NSString *)title {
     if(!self.window) {
@@ -380,7 +381,7 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
 - (void)present:(NSDictionary *)value {
     if(self.quietFocus)return;
     if(self.replying)return;
-    self.currentAlert=value;self.composing=NO;self.pendingReply=nil;self.replyRequest=nil;self.replyText=nil;
+    self.currentAlert=value;self.composing=NO;self.showingPlan=NO;self.pendingReply=nil;self.replyRequest=nil;self.replyText=nil;
     [self renderAlert];
     if([value[@"scream"] isKindOfClass:NSNumber.class]&&[value[@"scream"] boolValue])[self scream];
 }
@@ -467,7 +468,10 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     if([value[@"calendar_event"] isKindOfClass:NSDictionary.class]){[self renderCalendarAlert];return;}
     [self.banner orderOut:nil];
     // Layout in points from the top-left; AppKit's origin is bottom-left, so y = height - top - itemHeight.
-    CGFloat height=self.composing?(self.currentAlert[@"pending_reply"]?256:202):150;
+    NSArray *plan=[value[@"plan"] isKindOfClass:NSArray.class]?value[@"plan"]:@[];
+    NSUInteger visibleSteps=MIN(plan.count,3);
+    CGFloat planHeight=MAX(1,visibleSteps)*60+(plan.count>visibleSteps?20:0);
+    CGFloat height=self.composing?(self.currentAlert[@"pending_reply"]?256:202):self.showingPlan?156+planHeight:150;
     NSRect screen=NSScreen.mainScreen.visibleFrame;
     NSPanel *panel=[self panel:NSMakeRect(NSMaxX(screen)-382,NSMaxY(screen)-height-18,364,height)];panel.title=@"Paco notification";panel.appearance=[NSAppearance appearanceNamed:NSAppearanceNameAqua];
     NSView *content=[[NSView alloc] initWithFrame:NSMakeRect(0,0,364,height)];content.wantsLayer=YES;panel.contentView=content;
@@ -528,25 +532,50 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
 
     // Smaller task text gets four lines; keep contextual nudges on non-task notices.
     NSString *titleText=[value[@"title"] isKindOfClass:NSString.class]?value[@"title"]:(value[@"message"]?:@"");
+    if(self.showingPlan)titleText=[self word:@"plan_steps" fallback:@"Your next steps"];
     NSTextField *title=[NSTextField wrappingLabelWithString:titleText];title.font=rounded(12.5,NSFontWeightSemibold);title.textColor=color(0x1F3326);title.maximumNumberOfLines=value[@"task"]!=nil&&value[@"task"]!=NSNull.null?4:3;title.lineBreakMode=NSLineBreakByWordWrapping;title.cell.truncatesLastVisibleLine=YES;title.toolTip=titleText;
     CGFloat titleHeight=MIN(value[@"task"]!=nil&&value[@"task"]!=NSNull.null?62:46,ceil([title.cell cellSizeForBounds:NSMakeRect(0,0,242,1000)].height));
     title.selectable=YES;
     title.frame=NSMakeRect(108,height-38-titleHeight,242,titleHeight);[content addSubview:title];
     NSString *nudgeText=[value[@"nudge"] isKindOfClass:NSString.class]?value[@"nudge"]:@"";
+    if(self.showingPlan)nudgeText=plan.count?[self word:@"plan_timing" fallback:@"Suggested timing"]:@"";
     if(nudgeText.length&&(!value[@"task"]||value[@"task"]==NSNull.null)){
         NSTextField *nudge=[NSTextField labelWithString:nudgeText];nudge.font=rounded(10.5,NSFontWeightMedium);nudge.textColor=color(toneText(tone));nudge.lineBreakMode=NSLineBreakByTruncatingTail;
         nudge.selectable=YES;nudge.frame=NSMakeRect(108,height-(38+titleHeight+3)-16,242,16);[content addSubview:nudge];
     }
 
     self.task=[value[@"task"] isKindOfClass:NSNumber.class]?value[@"task"]:nil;
-    BOOL opensPlan=[value[@"open"] isKindOfClass:NSString.class];
+    BOOL opensPlan=[value[@"plan"] isKindOfClass:NSArray.class];
     NSDictionary *link=[value[@"link"] isKindOfClass:NSDictionary.class]&&[value[@"link"][@"url"] isKindOfClass:NSString.class]?value[@"link"]:nil;
-    if(!self.composing){
+    if(self.showingPlan&&!self.composing){
+        for(NSUInteger i=0;i<visibleSteps;i++){
+            NSDictionary *step=plan[i];
+            NSView *card=[[NSView alloc] initWithFrame:NSMakeRect(12,height-106-(i+1)*60,340,54)];card.wantsLayer=YES;card.layer.cornerRadius=10;card.layer.backgroundColor=color(0xF2F6EE).CGColor;[content addSubview:card];
+            NSTextField *number=[NSTextField labelWithString:[NSString stringWithFormat:@"%lu",(unsigned long)i+1]];number.font=rounded(12,NSFontWeightBold);number.textColor=color(0x2B7F10);number.frame=NSMakeRect(10,29,18,16);[card addSubview:number];
+            NSString *text=[step[@"title"] isKindOfClass:NSString.class]?step[@"title"]:@"";
+            NSTextField *title=[NSTextField wrappingLabelWithString:text];title.font=rounded(12,NSFontWeightSemibold);title.textColor=color(0x1F3326);title.maximumNumberOfLines=2;title.cell.truncatesLastVisibleLine=YES;title.selectable=YES;title.toolTip=text;title.frame=NSMakeRect(34,20,294,30);[card addSubview:title];
+            NSDateFormatter *formatter=[NSDateFormatter new];formatter.dateStyle=NSDateFormatterNoStyle;formatter.timeStyle=NSDateFormatterShortStyle;
+            NSString *start=[formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:[step[@"start"] doubleValue]]];
+            NSInteger minutes=MAX(1,lround(([step[@"end"] doubleValue]-[step[@"start"] doubleValue])/60));
+            NSTextField *timing=[NSTextField labelWithString:[NSString stringWithFormat:@"%@ · ~%ld min",start,(long)minutes]];timing.font=rounded(10,NSFontWeightMedium);timing.textColor=color(0x5E6B62);timing.frame=NSMakeRect(34,4,294,14);[card addSubview:timing];
+        }
+        if(!plan.count){
+            NSTextField *empty=[NSTextField wrappingLabelWithString:[self word:@"plan_empty" fallback:@"Nothing to schedule right now."]];empty.font=rounded(12,NSFontWeightMedium);empty.textColor=color(0x5E6B62);empty.frame=NSMakeRect(16,height-152,332,40);[content addSubview:empty];
+        }
+        if(plan.count>visibleSteps){
+            NSString *more=[[self word:@"plan_more" fallback:@"+{count} more blocks"] stringByReplacingOccurrencesOfString:@"{count}" withString:[NSString stringWithFormat:@"%lu",(unsigned long)(plan.count-visibleSteps)]];
+            if(plan.count-visibleSteps==1)more=[self word:@"plan_one_more" fallback:@"+1 more block"];
+            NSTextField *remaining=[NSTextField labelWithString:more];remaining.font=rounded(10,NSFontWeightMedium);remaining.textColor=color(0x5E6B62);remaining.frame=NSMakeRect(16,52,332,16);[content addSubview:remaining];
+        }
+        [self chunky:[self word:@"reply" fallback:@"Reply"] kind:@"white-blue" frame:NSMakeRect(12,14,84,30) action:@selector(beginReply) in:content];
+        [self chunky:[self word:@"hide_plan" fallback:@"Less"] kind:@"white" frame:NSMakeRect(104,14,72,30) action:@selector(togglePlan) in:content];
+        [self chunky:[self word:@"more_details" fallback:@"More details"] kind:@"blue" frame:NSMakeRect(184,14,168,30) action:@selector(planDetails) in:content];
+    } else if(!self.composing){
         NSButton *reply=[self chunky:[self word:@"reply" fallback:@"Reply"] kind:@"white-blue" frame:NSMakeRect(12,height-106-30,84,30) action:@selector(beginReply) in:content];reply.toolTip=[self word:@"reply" fallback:@"Reply"];
         // With somewhere to go, OPEN takes the middle slot: it opens the source and starts a 25-minute focus.
         NSString *openWord=opensPlan?[self word:@"show_plan" fallback:@"Show plan"]:[self word:@"open" fallback:@"Open"];
         NSArray *labels=self.task?@[[self word:@"done" fallback:@"Done"],link?openWord:[self word:@"focus" fallback:@"Focus"],[self word:@"later" fallback:@"Later"]]:link?@[openWord,[self word:@"ok" fallback:@"Got it"]]:@[[self word:@"ok" fallback:@"Got it"]];
-        NSArray *selectors=self.task?@[@"doneTask",link?@"openFromAlert":@"focusTask",@"snoozeTask"]:link?@[@"openFromAlert",@"dismiss"]:@[@"dismiss"];
+        NSArray *selectors=self.task?@[@"doneTask",link?@"openFromAlert":@"focusTask",@"snoozeTask"]:link?@[opensPlan?@"togglePlan":@"openFromAlert",@"dismiss"]:@[@"dismiss"];
         NSArray *kinds=self.task?@[@"green",link?@"blue":@"white-blue",@"white"]:link?@[@"blue",@"white"]:@[@"white"];
         CGFloat width=labels.count==3?76:118;
         for(NSUInteger i=0;i<labels.count;i++){
@@ -566,14 +595,28 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     }
     self.banner=panel;[panel orderFrontRegardless];
     if(self.composing){[panel makeKeyAndOrderFront:nil];[panel makeFirstResponder:self.replyField];}
-    else dispatch_after(dispatch_time(DISPATCH_TIME_NOW,18*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(self.banner==panel&&!self.composing)[self dismiss];});
+    else if(!self.showingPlan)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,18*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(self.banner==panel&&!self.composing&&!self.showingPlan)[self dismiss];});
 }
+- (void)togglePlan {
+    self.showingPlan=!self.showingPlan;[self renderAlert];
+    if(!self.showingPlan||!self.currentAlert[@"id"])return;
+    NSPanel *panel=self.banner;
+    NSMutableURLRequest *request=[self request:@"/api/action"];request.timeoutInterval=5;request.HTTPMethod=@"POST";[request setValue:@"1" forHTTPHeaderField:@"X-Paco"];[request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    request.HTTPBody=[NSJSONSerialization dataWithJSONObject:@{@"action":@"plan_preview",@"notification":self.currentAlert[@"id"]} options:0 error:nil];
+    [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error){dispatch_async(dispatch_get_main_queue(),^{
+        if(self.banner!=panel||!self.showingPlan||self.composing||self.resting||self.quietFocus)return;
+        NSDictionary *value=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
+        if(!error&&[(NSHTTPURLResponse *)response statusCode]==200&&[value[@"plan"] isKindOfClass:NSArray.class]){self.currentAlert=value;[self renderAlert];}
+    });}] resume];
+}
+- (void)planDetails { [self dismiss];[self open:@"/#tasks" title:@"Paco"]; }
 // Only web pages, Mac apps by bundle ID, and Paco's own pages; anything else is ignored.
 - (void)openLink:(NSString *)url {
     if(![url isKindOfClass:NSString.class])return;
     if([url hasPrefix:@"/#reminder-"]){[self open:url title:@"Paco"];return;}
     if([url isEqual:@"/meetings"]){[self showMeetings];return;}
     if([url isEqual:@"/advanced"]){[self showWorkspace];return;}
+    if([url isEqual:@"/#tasks"]){[self showWorkspace];return;}
     if([url hasPrefix:@"paco-app:"]){
         NSURL *app=[NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:[url substringFromIndex:9]];
         if(app)[NSWorkspace.sharedWorkspace openApplicationAtURL:app configuration:[NSWorkspaceOpenConfiguration configuration] completionHandler:nil];
@@ -588,8 +631,8 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     NSNumber *task=self.task;[self dismiss];[self openLink:url];
     if(task)[self post:@{@"action":@"start",@"id":task}];   // going to deal with it counts as focusing on it
 }
-- (void)dismiss { if(self.replying)return;[self.banner orderOut:nil];self.banner=nil;self.task=nil;self.composing=NO; }
-- (void)beginReply { self.composing=YES;[self renderAlert]; }
+- (void)dismiss { if(self.replying)return;[self.banner orderOut:nil];self.banner=nil;self.task=nil;self.composing=NO;self.showingPlan=NO; }
+- (void)beginReply { self.showingPlan=NO;self.composing=YES;[self renderAlert]; }
 - (void)talk {
     if(self.replying)return;
     NSMutableURLRequest *request=[self request:@"/api/action"];request.HTTPMethod=@"POST";[request setValue:@"1" forHTTPHeaderField:@"X-Paco"];[request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];request.HTTPBody=[NSJSONSerialization dataWithJSONObject:@{@"action":@"reply_context"} options:0 error:nil];
