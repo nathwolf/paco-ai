@@ -45,6 +45,7 @@ int captureContext(NSArray *args);
 @property BOOL composing;
 @property BOOL showingPlan;
 @property BOOL replying;
+@property NSUInteger replyGeneration;
 @property NSTextField *replyField;
 @property NSTextView *replyStatus;
 @property NSButton *sendButton;
@@ -646,14 +647,21 @@ OSStatus hotKeyHandler(EventHandlerCallRef next,EventRef event,void *ref) { [(__
     NSString *text=[self.replyField.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if(self.replying||text.length==0)return;
     if(![text isEqual:self.replyText]){self.replyRequest=NSUUID.UUID.UUIDString;self.replyText=text;}
-    [self submitReply:@{@"action":@"notification_reply",@"notification":self.currentAlert[@"id"]?:NSNull.null,@"text":text,@"request":self.replyRequest}];
+    [self submitReply:@{@"action":@"notification_reply",@"notification":self.currentAlert[@"id"]?:NSNull.null,@"text":text,@"request":self.replyRequest,@"timezone":NSTimeZone.localTimeZone.name}];
 }
 - (void)applyReply { if(self.pendingReply)[self submitReply:@{@"action":@"confirm_reply",@"id":self.pendingReply,@"accept":@YES}]; }
 - (void)cancelReply { if(self.pendingReply)[self submitReply:@{@"action":@"confirm_reply",@"id":self.pendingReply,@"accept":@NO}]; }
 - (void)submitReply:(NSDictionary *)value {
     if(self.replying)return;self.replying=YES;self.sendButton.enabled=NO;self.replyField.editable=NO;self.applyButton.enabled=NO;self.cancelButton.enabled=NO;
+    NSUInteger generation=++self.replyGeneration;
     self.replyStatus.string=[self word:@"thinking" fallback:@"Thinking…"];
-    NSMutableURLRequest *request=[self request:@"/api/action"];request.timeoutInterval=75;request.HTTPMethod=@"POST";[request setValue:@"1" forHTTPHeaderField:@"X-Paco"];[request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];request.HTTPBody=[NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+        if(self.replying&&self.replyGeneration==generation)self.replyStatus.string=[self word:@"reply_working" fallback:@"Reading your request. Your text will stay here."];
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,10*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+        if(self.replying&&self.replyGeneration==generation)self.replyStatus.string=[self word:@"reply_slow" fallback:@"Taking longer than usual. I’ll stop shortly if it doesn’t finish."];
+    });
+    NSMutableURLRequest *request=[self request:@"/api/action"];request.timeoutInterval=25;request.HTTPMethod=@"POST";[request setValue:@"1" forHTTPHeaderField:@"X-Paco"];[request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];request.HTTPBody=[NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
     [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error){dispatch_async(dispatch_get_main_queue(),^{
         self.replying=NO;self.sendButton.enabled=YES;self.replyField.editable=YES;self.applyButton.enabled=YES;self.cancelButton.enabled=YES;
         NSDictionary *answer=data?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;

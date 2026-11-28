@@ -78,9 +78,11 @@ PLAN_REASONS = ('Your daily plan','Tu plan de hoy')
 # Native banner wording. The native app falls back to English for any missing key.
 BANNER_LABELS = {
     'en': {'focus':'Focus','later':'Later','done':'Done','ok':'Got it','reply':'Reply','send':'Send','show_plan':'Show plan','hide_plan':'Less','more_details':'More details','plan_empty':'Nothing to schedule right now.','plan_more':'+{count} more blocks','plan_one_more':'+1 more block','plan_steps':'Your next steps','plan_timing':'Suggested timing',
+           'reply_working':'Reading your request. Your text will stay here.','reply_slow':'Taking longer than usual. I’ll stop shortly if it doesn’t finish.',
            'apply':'Apply','cancel':'Cancel','placeholder':'Reply to Paco…','focus_tip':'Focus for 25 minutes','later_tip':'Snooze for 15 minutes',
            'prompt':'Tell me what changed, ask for help, or say when to check back.','dismiss':'Dismiss notification','thinking':'Thinking…','open':'Open','open_tip':'Open it and focus for 25 minutes'},
     'es': {'focus':'Enfocar','later':'Luego','done':'Hecho','ok':'Entendido','reply':'Responder','send':'Enviar','show_plan':'Ver plan','hide_plan':'Menos','more_details':'Más detalles','plan_empty':'Nada que programar por ahora.','plan_more':'+{count} bloques más','plan_one_more':'+1 bloque más','plan_steps':'Tus próximos pasos','plan_timing':'Horario sugerido',
+           'reply_working':'Estoy leyendo tu solicitud. Tu texto seguirá aquí.','reply_slow':'Está tardando más de lo normal. Pararé pronto si no termina.',
            'apply':'Aplicar','cancel':'Cancelar','placeholder':'Responde a Paco…','focus_tip':'Concentrarme 25 minutos','later_tip':'Posponer 15 minutos',
            'prompt':'Cuéntame qué cambió, pide ayuda o dime cuándo volver a preguntar.','dismiss':'Cerrar aviso','thinking':'Pensando…','open':'Abrir','open_tip':'Ábrelo y concéntrate 25 minutos'},
 }

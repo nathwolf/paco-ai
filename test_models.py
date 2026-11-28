@@ -20,6 +20,35 @@ def transport_returning(body, seen):
 
 
 class Providers(unittest.TestCase):
+    def test_notification_profile_bounds_cli_and_leaves_analysis_unchanged(self):
+        calls=[]
+        def runner(args,prompt,timeout):
+            calls.append((args,timeout))
+            return '{"intent":{"kind":"done"}}','/nonexistent/paco-test'
+        with patch('shutil.which',return_value='/opt/bin/codex'):
+            config={'provider':'codex_cli','allowed_sources':['chat']}
+            models.complete(config,'s',{},'chat',runner=runner,interactive=True)
+            models.complete(config,'s',{},'chat',runner=runner)
+        self.assertEqual([c[1] for c in calls],[15,180])
+        self.assertIn('shell_tool',calls[0][0])
+        self.assertIn('model_reasoning_effort="low"',calls[0][0])
+        self.assertNotIn('shell_tool',calls[1][0])
+
+    def test_notification_http_uses_shorter_timeout_and_output(self):
+        calls=[]
+        def transport(request,timeout):
+            calls.append((json.loads(request.data),timeout))
+            return Response(b'{"choices":[{"message":{"content":"{\\"intent\\":{\\"kind\\":\\"done\\"}}"}}]}')
+        models.complete({'provider':'ollama','model':'test'},'s',{},'chat',transport,interactive=True)
+        self.assertEqual(calls[0][1],15)
+        self.assertEqual(calls[0][0]['max_tokens'],512)
+
+    def test_cli_timeout_is_a_readable_reply_error(self):
+        import subprocess
+        with patch('models.complete',side_effect=subprocess.TimeoutExpired('codex',15)):
+            with self.assertRaisesRegex(models.ReplyTimeout,'Nothing was changed'):
+                models.quick_reply({},'s',{})
+
     def test_real_cli_answer_survives_temporary_directory_cleanup(self):
         import sys
         output, folder = models._cli([sys.executable, '-c',

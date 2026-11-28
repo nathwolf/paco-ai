@@ -20,6 +20,8 @@ import shutil
 import subprocess
 import tempfile
 import time
+import queue
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,6 +29,37 @@ import urllib.request
 PROVIDERS = ('anthropic', 'bedrock', 'openai', 'claude_code', 'codex_cli', 'ollama', 'private')
 HOSTED = {'anthropic', 'bedrock', 'openai', 'claude_code', 'codex_cli'}
 LOCAL_HOSTS = ('localhost', '127.0.0.1', '::1')
+REPLY_TIMEOUT = 20
+
+
+class ReplyTimeout(ValueError):
+    def __init__(self):
+        super().__init__('That took too long. Nothing was changed. Your reply is still here. Try Send again.')
+
+
+def quick_reply(config, system, data):
+    """Hard wall-clock bound, including provider startup and credential lookup.
+
+    The worker only interprets copied data. It never receives a database connection,
+    so a late model response cannot apply a change after we have reported a timeout.
+    """
+    result = queue.Queue(maxsize=1)
+    config, data = json.loads(json.dumps([config, data]))
+    def run():
+        try:
+            result.put((complete(config, system, data, 'chat', interactive=True), None))
+        except Exception as exc:
+            result.put((None, exc))
+    threading.Thread(target=run, daemon=True, name='paco-reply-model').start()
+    try:
+        value, error = result.get(timeout=REPLY_TIMEOUT)
+    except queue.Empty:
+        raise ReplyTimeout() from None
+    if isinstance(error, (TimeoutError, subprocess.TimeoutExpired)):
+        raise ReplyTimeout() from None
+    if error:
+        raise error
+    return value
 
 
 def secret(provider):
@@ -110,9 +143,10 @@ def _cli(args, prompt, timeout):
         return output, folder
 
 
-def complete(config, system, data, source, transport=None, runner=None):
+def complete(config, system, data, source, transport=None, runner=None, *, interactive=False):
     system += '\nWriting style: never use em dashes in generated prose. Use periods, commas, or parentheses. Preserve exact source identifiers and URLs.'
-    system += '\nFor new task titles, use a concise next action, ideally 4 to 9 words and no more than 80 characters. Populate structured deadline fields when the source gives timing for that action. Put context, conditions and secondary steps in description or notes when supported. Preserve the actual next action and named project or person. Do not rename existing tasks unless asked.'
+    if not interactive:
+        system += '\nFor new task titles, use a concise next action, ideally 4 to 9 words and no more than 80 characters. Populate structured deadline fields when the source gives timing for that action. Put context, conditions and secondary steps in description or notes when supported. Preserve the actual next action and named project or person. Do not rename existing tasks unless asked.'
     provider = config.get("provider")
     if provider not in PROVIDERS:
         raise ValueError("Unsupported model provider")
@@ -133,7 +167,7 @@ def complete(config, system, data, source, transport=None, runner=None):
                     '--disable-slash-commands', '--settings', '{"disableAllHooks":true}']
             if config.get('model'):
                 args += ['--model', config['model']]
-            stdout, _ = run(args, prompt, 180)
+            stdout, _ = run(args, prompt, 15 if interactive else 180)
             envelope = parse(stdout)
             if envelope.get('is_error'):
                 raise ValueError('Claude Code returned an error; check that you are signed in')
@@ -145,9 +179,11 @@ def complete(config, system, data, source, transport=None, runner=None):
             # Keep deeper analysis (meetings, extraction, planning) unchanged.
             if source in ('chat', 'mattermost'):
                 args += ['-c', 'model_reasoning_effort="low"']
+            if interactive:
+                args += ['--disable', 'shell_tool', '--disable', 'sleep_tool', '-c', 'model_verbosity="low"']
             if config.get('model'):
                 args += ['-m', config['model']]
-            stdout, folder = run(args + ['-'], prompt, 180)
+            stdout, folder = run(args + ['-'], prompt, 15 if interactive else 180)
             answer = Path(folder) / 'answer.txt'
             raw = answer.read_text() if answer.exists() else stdout
     else:
@@ -156,14 +192,14 @@ def complete(config, system, data, source, transport=None, runner=None):
         if provider == "anthropic":
             url = "https://api.anthropic.com/v1/messages"
             headers.update({"x-api-key": secret(provider), "anthropic-version": "2023-06-01"})
-            payload.update(system=system + "\nReturn only a JSON object.", max_tokens=4096)
+            payload.update(system=system + "\nReturn only a JSON object.", max_tokens=512 if interactive else 4096)
         elif provider == 'bedrock':
             region = validate_region(config.get('region'))
             url = f"https://bedrock-runtime.{region}.amazonaws.com/model/{urllib.parse.quote(config['model'], safe='')}/converse"
             headers['Authorization'] = 'Bearer ' + secret(provider)
             payload = {'system': [{'text': system + "\nReturn only a JSON object."}],
                        'messages': [{'role': 'user', 'content': [{'text': content}]}],
-                       'inferenceConfig': {'maxTokens': 4096}}
+                       'inferenceConfig': {'maxTokens': 512 if interactive else 4096}}
         else:
             url = "http://127.0.0.1:11434/v1/chat/completions"
             if provider == "openai":
@@ -182,13 +218,20 @@ def complete(config, system, data, source, transport=None, runner=None):
                 payload["response_format"] = {"type": "json_object"}
             if provider=='private' and config.get('max_tokens'):
                 payload['max_tokens']=config['max_tokens']
+            if interactive:
+                if provider=='openai':
+                    payload['max_completion_tokens']=1024
+                else:
+                    payload['max_tokens']=min(config.get('max_tokens') or 512,512)
         request = urllib.request.Request(url, json.dumps(payload).encode(), headers)
         try:
-            with (transport or urllib.request.urlopen)(request, timeout=90) as response:
+            with (transport or urllib.request.urlopen)(request, timeout=15 if interactive else 90) as response:
                 result = json.load(response)
         except urllib.error.HTTPError as exc:
             raise ValueError(f"Model request failed (HTTP {exc.code}); check your key, model and account.") from None
         except urllib.error.URLError as exc:
+            if interactive and isinstance(exc.reason,TimeoutError):
+                raise ReplyTimeout() from None
             raise ValueError(f"Could not reach the model ({exc.reason}); check the address and your connection.") from None
         if provider == "anthropic":
             raw = "".join(p["text"] for p in result.get("content", []) if p.get("type") == "text")

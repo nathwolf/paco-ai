@@ -9,6 +9,7 @@ import app
 import paco
 import planning
 import replies
+import models
 
 
 class Replies(unittest.TestCase):
@@ -198,11 +199,46 @@ class Replies(unittest.TestCase):
             self.db.execute('UPDATE task SET due=123 WHERE id=1')
             self.db.commit()
             return {'intent':{'kind':'done'},'answer':'Done'},{}
-        with patch('replies.models.complete',side_effect=complete):
+        with patch('replies.models.quick_reply',side_effect=complete):
             with self.assertRaisesRegex(ValueError,'task changed'):
                 self.say('I have completed the report',config={'provider':'codex_cli'})
         self.assertEqual(self.task()['state'],'open')
         self.assertEqual(self.task()['due'],123)
+
+    def test_timed_out_model_cannot_apply_late_and_same_request_can_retry(self):
+        import threading
+        release=threading.Event();finished=threading.Event()
+        def late(*args,**kwargs):
+            release.wait(2)
+            finished.set()
+            return {'intent':{'kind':'done'}},{}
+        request=uuid.uuid4().hex
+        try:
+            with patch('models.REPLY_TIMEOUT',0.03),patch('models.complete',side_effect=late):
+                with self.assertRaisesRegex(models.ReplyTimeout,'Nothing was changed'):
+                    self.say('Could you take care of that change?',request=request,config={'provider':'codex_cli'})
+                self.assertEqual(self.task()['state'],'open')
+                release.set();self.assertTrue(finished.wait(1))
+            self.assertEqual(self.task()['state'],'open')
+            self.assertEqual(self.db.execute('SELECT count(*) FROM notification_reply').fetchone()[0],0)
+            with patch('models.quick_reply',return_value=({'intent':{'kind':'edit','remind_at':'2027-01-05T10:00:00+01:00'}},{})):
+                result=self.say('Could you take care of that change?',request=request,config={'provider':'codex_cli'})
+            self.assertTrue(result['close'])
+            self.assertEqual(self.task()['state'],'open')
+            self.assertEqual(self.task()['due'],datetime.fromisoformat('2027-01-05T10:00:00+01:00').timestamp())
+        finally:release.set()
+
+    def test_reply_context_preserves_instruction_and_bounds_background_prose(self):
+        with self.db:self.db.execute("INSERT INTO details VALUES(1,?,30,2000000000)",('context '*1000,))
+        text='Could we postpone this? '+('I need a different date. '*60)
+        with patch('models.quick_reply',return_value=({'intent':{'kind':'clarify'},'answer':'Which date?'},{})) as model:
+            result=self.say(text,config={'provider':'codex_cli'})
+        context=model.call_args.args[2]
+        self.assertEqual(context['reply'],text.strip())
+        self.assertLess(len(context['task']['goal']),850)
+        self.assertEqual(context['task']['deadline'],2000000000)
+        self.assertEqual(context['task']['assignee'],'')
+        self.assertFalse(result['close'])
 
     def test_model_consent_checked_before_network_or_keychain(self):
         with patch('models.secret') as secret,patch('models.urllib.request.urlopen') as network:
