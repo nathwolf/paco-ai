@@ -5,7 +5,7 @@ Clear instructions execute directly, with bounded fields and concurrent-edit che
 import json
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import calendar
 import task_dates
 import models
@@ -24,10 +24,64 @@ def initialize(db):
         db.execute('ALTER TABLE notification_reply ADD COLUMN snapshot TEXT')
 
 
+def local_reminder(s, now):
+    """Resolve bounded postponements without model startup or network latency.
+
+    Full matches deliberately exclude negations, conditions and multiple changes.
+    Calendar arithmetic uses local wall time so DST does not move a 09:00 reminder.
+    """
+    weekdays = dict(zip(calendar.day_name, range(7)))
+    weekdays = {key.lower(): value for key, value in weekdays.items()}
+    weekdays.update(dict(zip(('lunes','martes','miércoles','miercoles','jueves','viernes','sábado','sabado','domingo'), (0,1,2,2,3,4,5,5,6))))
+    days = '|'.join(weekdays)
+    prefix = (r'(?:(?:please,? )?(?:'
+              r'(?:leave|save) (?:this|it|that) (?:for|until)|'
+              r'(?:postpone|snooze|move|defer)(?: this| it| that)? (?:to|until)|'
+              r'(?:remind|remember) me(?: on)?|'
+              r"i (?:cannot|can't) do (?:this|it|that) until|"
+              r'(?:déjalo|dejalo|deja esto|posponer|pospón|pospon) para|'
+              r'(?:recuérdame|recuerdame)(?: el)?'
+              r') )?')
+    when = r'(tomorrow|next week|next month|mañana|la próxima semana|la proxima semana|el próximo mes|el proximo mes|(?:(?:next|on|el|el próximo|el proximo) )?(?:'+days+r'))'
+    # Without minutes or am/pm, a time such as "at 3" is left for interpretation.
+    clock = r'(?: (?:at|a las) (\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?'
+    match = re.fullmatch(prefix + when + clock + r'(?:,? please)?', s)
+    if not match:
+        return None
+    day, hour, minute, period = match.groups()
+    if hour and not minute and not period:
+        return None
+    hour, minute = int(hour) if hour else 9, int(minute or 0)
+    if period:
+        if not 1 <= hour <= 12:
+            return None
+        hour = hour % 12 + (12 if period == 'pm' else 0)
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        return None
+    local = datetime.fromtimestamp(now)
+    target = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if day in ('tomorrow', 'mañana'):
+        target += timedelta(days=1)
+    elif day in ('next week', 'la próxima semana', 'la proxima semana'):
+        target += timedelta(days=7-local.weekday())
+    elif day in ('next month', 'el próximo mes', 'el proximo mes'):
+        target = target.replace(year=local.year+(local.month==12), month=local.month%12+1, day=1)
+    else:
+        weekday = weekdays[day.split()[-1]]
+        offset = (weekday-local.weekday()) % 7
+        if offset == 0 and (target <= local or day.startswith(('next ', 'el próximo ', 'el proximo '))):
+            offset = 7
+        target += timedelta(days=offset)
+    return {'kind':'edit', 'remind_at':target.astimezone().isoformat()}
+
+
 def local_intent(text, now=None):
     now=time.time() if now is None else now
     s = text.lower().replace('’', "'").strip(' .!')
     s = re.sub(r'\s+', ' ', s)
+    reminder = local_reminder(s, now)
+    if reminder:
+        return reminder
     if re.fullmatch(r"(?:that(?: is|'s)|it(?: is|'s)|this is|i am|i'm)?\s*done|i (?:finished|completed) (?:it|this|that)|mark (?:it|this|that) (?:as )?done", s):
         return {'kind':'done'}
     if re.fullmatch(r"(?:(?:that|this|it)(?: is|'s) )?(?:super |very |really )?(?:important|urgent)|mark (?:it|this|that) (?:as )?urgent", s):

@@ -124,6 +124,68 @@ class Replies(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT deadline FROM details').fetchone()[0],2000000000)
         self.assertTrue(result['close'])
 
+    def test_common_postponements_skip_the_model_and_preserve_deadline(self):
+        self.now = datetime(2026,11,28,11,25).timestamp()
+        with self.db:self.db.execute("INSERT INTO details VALUES(1,'',30,2000000000)")
+        cases = [
+            ('Leave this for next week.', datetime(2026,11,30,9)),
+            ('Please, leave it for next week', datetime(2026,11,30,9)),
+            ('Remind me tomorrow', datetime(2026,11,29,9)),
+            ('Postpone this until next month', datetime(2026,12,1,9)),
+            ('Move this to Monday', datetime(2026,11,30,9)),
+            ('Remind me on Tuesday at 14:30', datetime(2026,12,1,14,30)),
+            ('Tomorrow at 3 pm', datetime(2026,11,29,15)),
+            ('Tomorrow at 12 am', datetime(2026,11,29,0)),
+            ('Tomorrow at 12:15 pm', datetime(2026,11,29,12,15)),
+            ('Déjalo para la próxima semana', datetime(2026,11,30,9)),
+            ('Recuérdame el lunes a las 14:30', datetime(2026,11,30,14,30)),
+        ]
+        with patch('replies.models.complete', side_effect=AssertionError('Must stay local')):
+            for text, expected in cases:
+                with self.subTest(text=text):
+                    result=self.say(text,config={'provider':'codex_cli'})
+                    self.assertEqual(self.task()['due'],expected.timestamp())
+                    self.assertEqual(self.task()['title'],'Ship report')
+                    self.assertEqual(self.task()['state'],'open')
+                    self.assertEqual(self.db.execute('SELECT deadline FROM details').fetchone()[0],2000000000)
+                    self.assertFalse(result['pending'])
+                    self.assertTrue(result['close'])
+                    self.assertIn(expected.strftime('%d %b %Y at %H:%M'),result['answer'])
+
+    def test_local_postponements_reject_conditions_negations_and_multiple_changes(self):
+        for text in ('Do not leave this for next week', 'If Juan agrees leave this for next week',
+                     'Leave the other task for next week', 'Leave this for next week and rename it',
+                     'Tomorrow at 3', 'Tomorrow at 25:00', 'Tomorrow at 9:99', 'Tomorrow at 15 pm',
+                     'Remind me next week unless I finish', 'Can I leave this for next week?'):
+            with self.subTest(text=text):self.assertIsNone(replies.local_intent(text,self.now))
+
+    def test_postponements_cross_months_years_and_week_boundaries(self):
+        cases = [
+            (datetime(2026,12,31,10),'next month',datetime(2027,1,1,9)),
+            (datetime(2026,12,31,10),'tomorrow',datetime(2027,1,1,9)),
+            (datetime(2026,11,30,8),'next week',datetime(2026,12,7,9)),
+            (datetime(2026,11,30,8),'next Monday',datetime(2026,12,7,9)),
+            (datetime(2026,11,30,8),'Monday',datetime(2026,11,30,9)),
+            (datetime(2026,11,30,10),'Monday',datetime(2026,12,7,9)),
+        ]
+        for now, text, expected in cases:
+            with self.subTest(text=text,now=now):
+                intent=replies.local_intent(text,now.timestamp())
+                self.assertEqual(datetime.fromisoformat(intent['remind_at']).timestamp(),expected.timestamp())
+
+    def test_local_calendar_postponements_preserve_wall_time_across_dst(self):
+        import os,time
+        try:
+            with patch.dict(os.environ,{'TZ':'Europe/Paris'}):
+                time.tzset()
+                for now in (datetime(2027,3,27,10),datetime(2027,10,30,10)):
+                    intent=replies.local_intent('remind me tomorrow',now.timestamp())
+                    target=datetime.fromisoformat(intent['remind_at'])
+                    self.assertEqual(target.hour,9)
+                    self.assertEqual(target.timestamp(),datetime(now.year,now.month,now.day+1,9).timestamp())
+        finally:
+            time.tzset()
+
     def test_model_edits_only_requested_fields(self):
         result=self.proposed({'kind':'edit','title':'Request document','remind_at':'2027-01-03T09:00:00+01:00'})
         self.assertTrue(result['close'])
